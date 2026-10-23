@@ -1,7 +1,8 @@
 // Shared constants for the playfield and tiles.
 
-export const COLS = 15;
-export const ROWS = 18; // row 0 is open sky, rows 1..17 are earth
+// The visible window, in tiles. Floors are bigger and scroll.
+export const VIEW_COLS = 15;
+export const VIEW_ROWS = 18;
 export const TILE = 32;
 export const HUD_H = 40;
 
@@ -33,7 +34,8 @@ export function actFor(floor) {
 }
 
 // Depth layer 1..4 for a row, used for dirt colour and gold value.
-export function layerFor(row) {
+// Row 0 is open sky; rows below it are earth.
+export function layerFor(row, rows) {
   if (row <= 0) return 0;
-  return Math.min(4, 1 + Math.floor(((row - 1) * 4) / (ROWS - 1)));
+  return Math.min(4, 1 + Math.floor(((row - 1) * 4) / (rows - 1)));
 }

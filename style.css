@@ -77,6 +77,7 @@ body {
 .panel h2 { font-size: 15px; margin: 4px 0 12px; color: var(--accent); }
 .panel h2.lose { color: var(--bad); }
 .panel h2.win { color: var(--good); }
+.panel h3 { font-size: 11px; margin: 16px 0 8px; color: var(--text); text-align: left; }
 .tag { font-size: 11px; }
 .small { font-size: 9px; }
 .dim { color: var(--dim); }

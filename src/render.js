@@ -1,6 +1,6 @@
 // Canvas renderer. All art is drawn procedurally (no sprite files).
 
-import { TILE, HUD_H, T_DIRT, T_BEDROCK, layerFor, actFor, TOTAL_FLOORS } from './constants.js';
+import { TILE, HUD_H, VIEW_COLS, VIEW_ROWS, T_DIRT, T_BEDROCK, layerFor, actFor, TOTAL_FLOORS } from './constants.js';
 
 const DIRT = [
   null,
@@ -19,11 +19,34 @@ export class Renderer {
     this.popups = [];
     this.particles = [];
     this.shake = 0;
+    this.cam = { x: 0, y: 0 };
+    this.canvas.width = VIEW_COLS * TILE;
+    this.canvas.height = VIEW_ROWS * TILE + HUD_H;
   }
 
-  resize(cols, rows) {
-    this.canvas.width = cols * TILE;
-    this.canvas.height = rows * TILE + HUD_H;
+  get viewW() {
+    return VIEW_COLS * TILE;
+  }
+
+  get viewH() {
+    return VIEW_ROWS * TILE;
+  }
+
+  // Follow the player, clamped to the map. `snap` jumps straight there.
+  updateCamera(sim, dt, snap = false) {
+    const p = sim.player;
+    const maxX = Math.max(0, sim.cols * TILE - this.viewW);
+    const maxY = Math.max(0, sim.rows * TILE - this.viewH);
+    const tx = Math.min(maxX, Math.max(0, p.x * TILE + TILE / 2 - this.viewW / 2));
+    const ty = Math.min(maxY, Math.max(0, p.y * TILE + TILE / 2 - this.viewH * 0.45));
+    if (snap) {
+      this.cam.x = tx;
+      this.cam.y = ty;
+      return;
+    }
+    const k = 1 - Math.exp(-dt * 8);
+    this.cam.x += (tx - this.cam.x) * k;
+    this.cam.y += (ty - this.cam.y) * k;
   }
 
   addPopup(x, y, text, color = '#ffe066') {
@@ -93,10 +116,23 @@ export class Renderer {
     this.drawHud(sim, run);
 
     ctx.translate(0, HUD_H);
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, 0, this.viewW, this.viewH);
+    ctx.clip();
+    const cx = Math.round(this.cam.x);
+    const cy = Math.round(this.cam.y);
+    ctx.translate(-cx, -cy);
     if (this.shake > 0) {
       const m = this.shake * 8;
       ctx.translate((Math.random() - 0.5) * m, (Math.random() - 0.5) * m);
     }
+    this.visible = {
+      x0: Math.max(0, Math.floor(cx / TILE) - 1),
+      y0: Math.max(0, Math.floor(cy / TILE) - 1),
+      x1: Math.min(sim.cols - 1, Math.ceil((cx + this.viewW) / TILE)),
+      y1: Math.min(sim.rows - 1, Math.ceil((cy + this.viewH) / TILE)),
+    };
     this.drawGrid(sim, run);
     this.drawItems(sim, t);
     for (const r of sim.rocks) this.drawRock(r, t);
@@ -105,11 +141,13 @@ export class Renderer {
     for (const e of sim.enemies) this.drawEnemy(e, t);
     this.drawPlayer(sim.player, t, sim);
     this.drawFx();
+    ctx.restore();
 
     if (sim.freeze > 0 && sim.status === 'playing') {
       ctx.fillStyle = 'rgba(120,180,255,0.08)';
-      ctx.fillRect(0, 0, sim.cols * TILE, sim.rows * TILE);
+      ctx.fillRect(0, 0, this.viewW, this.viewH);
     }
+    if (sim.cols > VIEW_COLS || sim.rows > VIEW_ROWS) this.drawMinimap(sim);
     if (view.banner) this.drawBanner(sim, view.banner);
     ctx.restore();
   }
@@ -163,9 +201,10 @@ export class Renderer {
     ctx.fillStyle = sky;
     ctx.fillRect(0, 0, sim.cols * TILE, TILE);
 
-    for (let y = 1; y < sim.rows; y++) {
-      const [c1, c2] = palette[layerFor(y)];
-      for (let x = 0; x < sim.cols; x++) {
+    const v = this.visible;
+    for (let y = Math.max(1, v.y0); y <= v.y1; y++) {
+      const [c1, c2] = palette[layerFor(y, sim.rows)];
+      for (let x = v.x0; x <= v.x1; x++) {
         const px = x * TILE;
         const py = y * TILE;
         const tile = sim.tile(x, y);
@@ -196,8 +235,8 @@ export class Renderer {
     // Tunnels drawn as rounded shapes joined to open neighbours.
     ctx.fillStyle = TUNNEL;
     const inset = 4;
-    for (let y = 1; y < sim.rows; y++) {
-      for (let x = 0; x < sim.cols; x++) {
+    for (let y = Math.max(1, v.y0); y <= v.y1; y++) {
+      for (let x = v.x0; x <= v.x1; x++) {
         if (sim.tile(x, y) !== 0) continue;
         const px = x * TILE;
         const py = y * TILE;
@@ -501,10 +540,41 @@ export class Renderer {
     ctx.globalAlpha = 1;
   }
 
+  drawMinimap(sim) {
+    const ctx = this.ctx;
+    const s = 2;
+    const w = sim.cols * s;
+    const h = sim.rows * s;
+    const ox = this.viewW - w - 6;
+    const oy = 6;
+    ctx.globalAlpha = 0.75;
+    ctx.fillStyle = '#0b0910';
+    ctx.fillRect(ox - 2, oy - 2, w + 4, h + 4);
+    for (let y = 0; y < sim.rows; y++) {
+      for (let x = 0; x < sim.cols; x++) {
+        const t = sim.tile(x, y);
+        ctx.fillStyle = t === 0 ? '#1d1626' : t === T_BEDROCK ? '#5f5f6e' : '#6d4c41';
+        ctx.fillRect(ox + x * s, oy + y * s, s, s);
+      }
+    }
+    ctx.globalAlpha = 1;
+    for (const e of sim.enemies) {
+      if (e.state === 'popped' || e.state === 'crushed') continue;
+      ctx.fillStyle = e.kind === 'boss' ? '#ffd54f' : e.kind === 'scorch' ? '#ff7043' : '#9ccc65';
+      const r = e.kind === 'boss' ? 4 : 2;
+      ctx.fillRect(ox + e.x * s + 1 - r / 2, oy + e.y * s + 1 - r / 2, r, r);
+    }
+    ctx.fillStyle = '#4fc3f7';
+    ctx.fillRect(ox + sim.player.x * s - 1, oy + sim.player.y * s - 1, 4, 4);
+    ctx.strokeStyle = 'rgba(245,230,200,0.6)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(ox + (this.cam.x / TILE) * s + 0.5, oy + (this.cam.y / TILE) * s + 0.5, VIEW_COLS * s, VIEW_ROWS * s);
+  }
+
   drawBanner(sim, banner) {
     const ctx = this.ctx;
-    const w = sim.cols * TILE;
-    const y = sim.rows * TILE * 0.32;
+    const w = this.viewW;
+    const y = this.viewH * 0.32;
     ctx.fillStyle = 'rgba(10,8,14,0.82)';
     ctx.fillRect(0, y - 44, w, 88);
     ctx.textAlign = 'center';

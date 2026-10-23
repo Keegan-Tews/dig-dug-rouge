@@ -5,7 +5,7 @@ import {
   newRun, runStats, screensAfterFloor, rewardChoices, applyUpgrade, shopStock,
   buyShopItem, failRun, isBossFloor, MAX_HEARTS,
 } from '../src/run.js';
-import { defaultMeta, buyUnlock, recordRunEnd, loadMeta, saveMeta } from '../src/meta.js';
+import { defaultMeta, buyUnlock, buyPerk, perkCost, recordRunEnd, loadMeta, saveMeta } from '../src/meta.js';
 import { UPGRADE_BY_ID } from '../src/upgrades.js';
 
 test('runs start with one heart and no gold', () => {
@@ -93,6 +93,7 @@ test('vault unlocks cost fossils and persist', () => {
 
 test('classes change the starting state', () => {
   const meta = defaultMeta();
+  meta.unlocked.push('class_sapper', 'class_brute');
   const base = runStats(newRun(1, meta));
   const sapper = runStats(newRun(1, meta, 'sapper'));
   assert.ok(sapper.speed > base.speed);
@@ -102,4 +103,39 @@ test('classes change the starting state', () => {
   assert.equal(runStats(brute).popDiscount, 1);
   assert.ok(runStats(brute).speed < base.speed);
   assert.equal(newRun(1, meta, 'nope').classId, 'digger');
+});
+
+test('locked classes fall back to the Digger', () => {
+  const meta = defaultMeta();
+  assert.equal(newRun(1, meta, 'sapper').classId, 'digger');
+  assert.equal(newRun(1, meta, 'brute').classId, 'digger');
+  meta.unlocked.push('class_brute');
+  assert.equal(newRun(1, meta, 'brute').classId, 'brute');
+});
+
+test('vault perks are tiered, permanent and raise stats', () => {
+  const meta = defaultMeta();
+  meta.fossils = 100;
+  const before = runStats(newRun(1, meta));
+  assert.equal(perkCost(meta, 'perm_hose'), 5);
+  assert.ok(buyPerk(meta, 'perm_hose'));
+  assert.equal(perkCost(meta, 'perm_hose'), 12);
+  assert.ok(buyPerk(meta, 'perm_hose'));
+  assert.equal(perkCost(meta, 'perm_hose'), null);
+  assert.ok(!buyPerk(meta, 'perm_hose'), 'maxed');
+  assert.equal(meta.fossils, 100 - 17);
+  assert.ok(buyPerk(meta, 'perm_heart'));
+  assert.ok(buyPerk(meta, 'perm_hat'));
+  const run = newRun(2, meta);
+  const after = runStats(run);
+  assert.equal(after.hoseRange, before.hoseRange + 2);
+  assert.equal(after.shield, before.shield + 1);
+  assert.equal(run.hearts, 2);
+});
+
+test('perks cannot be bought without enough fossils', () => {
+  const meta = defaultMeta();
+  meta.fossils = 1;
+  assert.ok(!buyPerk(meta, 'perm_speed'));
+  assert.equal(meta.fossils, 1);
 });

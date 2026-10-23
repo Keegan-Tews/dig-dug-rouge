@@ -10,6 +10,7 @@ const HOSE_EXTEND = 16; // tiles per second
 const HOSE_RETRACT = 24;
 const ROCK_FALL = 7;
 const TOUCH = 0.6;
+const GHOST_RANGE = 14;
 
 function dist(ax, ay, bx, by) {
   return Math.hypot(ax - bx, ay - by);
@@ -363,7 +364,7 @@ export class FloorSim {
 
   enemyGold(e) {
     if (e.kind === 'boss') return 25 * e.level;
-    const layer = Math.max(1, layerFor(Math.round(e.y)));
+    const layer = Math.max(1, layerFor(Math.round(e.y), this.rows));
     return 1 + layer + (e.kind === 'scorch' ? 2 : 0);
   }
 
@@ -546,6 +547,8 @@ export class FloorSim {
     }
 
     e.ghostTimer -= dt;
+    // On big maps only foes within range come hunting through the dirt.
+    if (!e.moving && e.ghostTimer <= 0 && dist(e.x, e.y, p.x, p.y) > GHOST_RANGE) e.ghostTimer = 2;
     if (!e.moving && e.ghostTimer <= 0) {
       e.state = 'ghost';
       e.ghostTime = 0;

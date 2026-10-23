@@ -3,22 +3,27 @@
 import { Rng, hashSeed } from './rng.js';
 import { TOTAL_FLOORS, BOSS_FLOORS, SHOP_EVERY } from './constants.js';
 import { deriveStats, availableUpgrades, UPGRADE_BY_ID } from './upgrades.js';
-import { CLASS_BY_ID } from './classes.js';
+import { CLASS_BY_ID, classUnlocked } from './classes.js';
+import { applyPerks, perkHearts } from './meta.js';
 
 export const BASE_HEARTS = 1;
 export const MAX_HEARTS = 5;
 
 export function newRun(seed, meta, classId = 'digger') {
-  const cls = CLASS_BY_ID[classId] || CLASS_BY_ID.digger;
+  const unlocked = meta ? meta.unlocked.slice() : [];
+  let cls = CLASS_BY_ID[classId] || CLASS_BY_ID.digger;
+  if (!classUnlocked(cls, unlocked)) cls = CLASS_BY_ID.digger;
+  const perks = meta && meta.perks ? { ...meta.perks } : {};
   return {
     seed: seed >>> 0,
     classId: cls.id,
     floor: 1,
     gold: 0,
     fossils: 0,
-    hearts: BASE_HEARTS,
+    hearts: Math.min(MAX_HEARTS, BASE_HEARTS + perkHearts(perks)),
+    perks,
     upgrades: { ...cls.start },
-    unlocked: meta ? meta.unlocked.slice() : [],
+    unlocked,
     kills: 0,
     goldEarned: 0,
     over: false,
@@ -27,7 +32,7 @@ export function newRun(seed, meta, classId = 'digger') {
 }
 
 export function runStats(run) {
-  return deriveStats(run.upgrades, CLASS_BY_ID[run.classId]);
+  return applyPerks(deriveStats(run.upgrades, CLASS_BY_ID[run.classId]), run.perks);
 }
 
 export function floorSeed(run, floor = run.floor) {

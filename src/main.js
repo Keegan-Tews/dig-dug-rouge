@@ -9,7 +9,9 @@ import { Input } from './input.js';
 import { Sfx } from './audio.js';
 import { UPGRADE_BY_ID } from './upgrades.js';
 import { CLASSES, CLASS_BY_ID, classUnlocked } from './classes.js';
-import { UNLOCKS, loadMeta, saveMeta, buyUnlock, recordRunEnd } from './meta.js';
+import {
+  UNLOCKS, PERKS, loadMeta, saveMeta, buyUnlock, buyPerk, perkLevel, perkCost, recordRunEnd,
+} from './meta.js';
 import {
   newRun, runStats, floorSeed, screensAfterFloor, rewardChoices, applyUpgrade,
   shopStock, buyShopItem, completeFloor, advanceFloor, failRun, winRun, rngFor,
@@ -94,7 +96,19 @@ function showHelp() {
 function showVault() {
   state.scene = 'vault';
   const m = state.meta;
-  const rows = UNLOCKS.slice().sort((a, b) => a.cost - b.cost).map((u) => {
+  const scroll = overlay.querySelector('.panel')?.scrollTop || 0;
+  const perks = PERKS.map((p) => {
+    const level = perkLevel(m, p.id);
+    const cost = perkCost(m, p.id);
+    const maxed = cost === null;
+    return `
+      <div class="card ${maxed ? 'owned' : ''}">
+        <div class="card-head"><b>${p.icon} ${p.name}</b><span>${level}/${p.costs.length}</span></div>
+        <p>${p.desc}</p>
+        ${maxed ? '' : `<button data-action="perk" data-id="${p.id}" ${m.fossils >= cost ? '' : 'disabled'}>Buy ${cost} 🦴</button>`}
+      </div>`;
+  }).join('');
+  const unlocks = UNLOCKS.slice().sort((a, b) => a.cost - b.cost).map((u) => {
     const owned = m.unlocked.includes(u.id);
     const afford = m.fossils >= u.cost;
     return `
@@ -107,10 +121,14 @@ function showVault() {
   el(`
     <div class="panel">
       <h2>Fossil Vault</h2>
-      <p class="small">You have <b>${m.fossils} 🦴</b>. Unlocks add options to future runs, not raw power.</p>
-      <div class="cards">${rows}</div>
+      <p class="small">You have <b>${m.fossils} 🦴</b>. Everything here is permanent and carries into every future run.</p>
+      <h3>Permanent upgrades</h3>
+      <div class="cards">${perks}</div>
+      <h3>Unlocks</h3>
+      <div class="cards">${unlocks}</div>
       <div class="buttons"><button data-action="title">Back</button></div>
     </div>`);
+  overlay.querySelector('.panel').scrollTop = scroll;
 }
 
 function showClasses() {
@@ -148,7 +166,7 @@ function startFloor() {
   const stats = runStats(run);
   const layout = generateFloor(run.floor, floorSeed(run), { fossilLuck: stats.fossilLuck });
   state.sim = new FloorSim(layout, stats, { hearts: run.hearts });
-  renderer.resize(layout.cols, layout.rows);
+  renderer.updateCamera(state.sim, 0, true);
   renderer.popups = [];
   renderer.particles = [];
   const act = actFor(run.floor);
@@ -296,6 +314,13 @@ const actions = {
     state.paused = false;
     showEnd(false);
   },
+  perk: (b) => {
+    if (buyPerk(state.meta, b.dataset.id)) {
+      saveMeta(storage, state.meta);
+      sfx.play('buy');
+    }
+    showVault();
+  },
   unlock: (b) => {
     if (buyUnlock(state.meta, b.dataset.id)) {
       saveMeta(storage, state.meta);
@@ -375,6 +400,7 @@ function frame(now) {
       }
     }
     renderer.step(dt);
+    renderer.updateCamera(state.sim, dt);
     if (state.sim.status === 'cleared') floorCleared();
     else if (state.sim.status === 'dead') showEnd(false);
   } else {
@@ -390,6 +416,6 @@ if (touch) input.bindTouch(touch);
 // A quiet backdrop floor behind the title menu.
 state.sim = new FloorSim(generateFloor(1, 20261023), runStats(newRun(0)), { hearts: 1 });
 state.run = newRun(0);
-renderer.resize(state.sim.cols, state.sim.rows);
+renderer.updateCamera(state.sim, 0, true);
 showTitle();
 requestAnimationFrame(frame);

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { generateFloor, START } from '../src/levelgen.js';
+import { generateFloor } from '../src/levelgen.js';
 import { T_OPEN, T_DIRT, BOSS_FLOORS } from '../src/constants.js';
 
 test('same floor and seed give the same layout', () => {
@@ -22,12 +22,12 @@ test('every floor 1-20 generates valid layouts across many seeds', () => {
     for (let seed = 0; seed < 40; seed++) {
       const l = generateFloor(floor, seed * 7717 + floor);
       const at = (x, y) => l.grid[y * l.cols + x];
-      assert.equal(at(START.x, START.y), T_OPEN, 'start is open');
-      for (let y = 1; y <= START.y; y++) assert.equal(at(START.x, y), T_OPEN, 'shaft is open');
+      assert.equal(at(l.start.x, l.start.y), T_OPEN, 'start is open');
+      for (let y = 1; y <= l.start.y; y++) assert.equal(at(l.start.x, y), T_OPEN, 'shaft is open');
       assert.ok(l.enemies.length >= 3);
       for (const e of l.enemies) {
         assert.equal(at(e.x, e.y), T_OPEN, `enemy on open tile (floor ${floor})`);
-        assert.ok(Math.abs(e.x - START.x) + Math.abs(e.y - START.y) >= 5, 'enemy not on top of player');
+        assert.ok(Math.abs(e.x - l.start.x) + Math.abs(e.y - l.start.y) >= 5, 'enemy not on top of player');
       }
       for (const r of l.rocks) {
         assert.equal(at(r.x, r.y), T_DIRT, 'rock in dirt');

@@ -29,11 +29,12 @@ Touch devices get an on-screen d-pad and pump button.
 ## The run
 
 - **20 floors in 3 acts:** Topsoil (1 to 7), Bedrock (8 to 14, with undiggable bedrock) and The Deep (15 to 20).
+- **Scrolling maps** that grow each act (19x24, 23x30, then 27x36 tiles). The camera follows you and a minimap shows the whole floor.
 - **Bosses** on floors 7, 14 and 20: The Bloat, Cinder Mother and The Deep King. They take many pumps, spawn minions and (later) breathe fire.
 - **One hit and you're out.** Every run starts with one heart. Extra hearts come from the Spare Heart upgrade and shop heals; Hard Hats block one hit per floor. Falling rocks always kill.
 - **After every floor**, pick one of three upgrades. **Every 3rd floor** has the Mole Market shop.
-- **Gold** is lost when you die. **Fossils** dug up in the deeper layers are banked between runs and spent in the **Fossil Vault**.
-- **Classes:** Digger (all-rounder), Sapper (fast digger, shorter hose) and Brute (slow, starts with a Hard Hat, pops foes in 3 pumps).
+- **Gold** is lost when you die. **Fossils** dug up in the deeper layers are banked between runs and spent in the **Fossil Vault** on permanent stat upgrades (speed, gold, hose reach, deflate time, an extra per-floor shield, extra starting hearts), new classes and new upgrade-pool options.
+- **Classes:** Digger (all-rounder), plus Sapper (fast digger, shorter hose) and Brute (slow, starts with a Hard Hat, pops foes in 3 pumps), which are unlocked in the vault.
 - Every floor is generated from the run seed, so a run can be replayed.
 
 ### Foes
@@ -49,7 +50,7 @@ Touch devices get an on-screen d-pad and pump button.
 | `src/levelgen.js` | Seeded procedural floor layouts and difficulty curve. |
 | `src/run.js` | Run state: floors, rewards, shop, death and victory. |
 | `src/upgrades.js` / `src/classes.js` | Upgrade catalog, classes and stat derivation. |
-| `src/meta.js` | Fossil Vault unlocks and the save kept between runs (localStorage). |
+| `src/meta.js` | Fossil Vault perks and unlocks, and the save kept between runs (localStorage). |
 | `src/render.js` | Canvas renderer; all art is drawn in code. |
 | `src/main.js` | Scenes, menus and the fixed-step game loop. |
 | `src/input.js`, `src/audio.js` | Keyboard/touch input and synthesized sound effects. |

@@ -3,34 +3,42 @@
 // The shape follows the classic arcade pattern (see analysis/round-layouts.txt
 // in the project files): a shaft from the surface down to the middle, short
 // straight pockets that each hold an enemy, and rocks resting in solid dirt.
+// Maps grow with each act and are bigger than the screen, which scrolls.
 
 import { Rng } from './rng.js';
-import { COLS, ROWS, T_OPEN, T_DIRT, T_BEDROCK, BOSS_FLOORS, actFor } from './constants.js';
+import { T_OPEN, T_DIRT, T_BEDROCK, BOSS_FLOORS, actFor } from './constants.js';
 
-export const START = { x: 7, y: 8 };
+const MAP_SIZES = { 1: { cols: 19, rows: 24 }, 2: { cols: 23, rows: 30 }, 3: { cols: 27, rows: 36 } };
+const BASE_AREA = 15 * 18; // the original single-screen field
+
+export function mapSize(floor) {
+  return MAP_SIZES[actFor(floor).num];
+}
+
+export function startFor(cols) {
+  return { x: Math.floor(cols / 2), y: 8 };
+}
 
 export function difficulty(floor) {
   const act = actFor(floor).num;
+  const { cols, rows } = mapSize(floor);
+  const area = (cols * rows) / BASE_AREA;
   return {
     act,
-    enemyCount: Math.min(9, 3 + Math.floor(floor / 2)),
+    enemyCount: Math.min(16, Math.round((3 + Math.floor(floor / 2)) * area * 0.7)),
     scorchRatio: Math.min(0.55, 0.12 + floor * 0.02 + (act === 3 ? 0.1 : 0)),
     enemySpeed: Math.min(4.0, 2.4 + floor * 0.07),
     ghostDelay: [Math.max(4, 11 - floor * 0.35), Math.max(7, 17 - floor * 0.45)],
     chase: Math.min(0.75, 0.3 + floor * 0.025),
-    rockCount: floor <= 2 ? 3 : 4,
-    bedrockBlobs: act === 1 ? 0 : act === 2 ? 3 : 4,
-    nuggets: 3 + Math.min(4, Math.floor(floor / 4)),
+    rockCount: Math.round((floor <= 2 ? 3 : 4) * area),
+    bedrockBlobs: Math.round((act === 1 ? 0 : act === 2 ? 3 : 4) * area),
+    nuggets: Math.round((3 + Math.min(4, Math.floor(floor / 4))) * area),
   };
 }
 
 export function bossLevel(floor) {
   const i = BOSS_FLOORS.indexOf(floor);
   return i < 0 ? 0 : i + 1;
-}
-
-function idx(x, y) {
-  return y * COLS + x;
 }
 
 export function generateFloor(floor, seed, opts = {}) {
@@ -45,6 +53,9 @@ export function generateFloor(floor, seed, opts = {}) {
 
 function tryGenerate(floor, seed, fossilLuck) {
   const rng = new Rng(seed);
+  const { cols: COLS, rows: ROWS } = mapSize(floor);
+  const START = startFor(COLS);
+  const idx = (x, y) => y * COLS + x;
   const diff = difficulty(floor);
   const boss = bossLevel(floor);
   const grid = new Uint8Array(COLS * ROWS).fill(T_DIRT);
@@ -100,7 +111,7 @@ function tryGenerate(floor, seed, fossilLuck) {
     enemies.push({ kind: 'boss', x: mid.x, y: mid.y, level: boss });
   }
 
-  const regular = boss ? 2 + boss : diff.enemyCount;
+  const regular = boss ? boss + Math.round(diff.enemyCount * 0.35) : diff.enemyCount;
   for (let i = 0; i < regular; i++) {
     const p = carvePocket(3, 4, 2, ROWS - 2, false);
     if (!p) return null;
@@ -160,8 +171,9 @@ function tryGenerate(floor, seed, fossilLuck) {
     }
   };
   for (let n = 0; n < diff.nuggets; n++) placeItem('gold', 2, 2 + Math.floor(floor / 5));
-  const fossilChance = Math.min(0.9, 0.35 + floor * 0.01 + fossilLuck * 0.2);
+  const fossilChance = Math.min(0.95, 0.5 + floor * 0.015 + fossilLuck * 0.2);
   if (rng.chance(fossilChance)) placeItem('fossil', Math.floor(ROWS / 2), 1);
+  if (rng.chance(floor / 40 + fossilLuck * 0.1)) placeItem('fossil', Math.floor(ROWS / 2), 1);
   if (boss) placeItem('fossil', Math.floor(ROWS / 2), 1);
 
   return {
