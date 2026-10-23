@@ -1,0 +1,164 @@
+:root {
+  --bg: #0b0910;
+  --panel: rgba(23, 18, 31, 0.94);
+  --edge: #3b2c4d;
+  --text: #f5e6c8;
+  --dim: #a99bb8;
+  --accent: #ffd54f;
+  --good: #9ccc65;
+  --bad: #ef5350;
+  --font: 'Press Start 2P', ui-monospace, monospace;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  overflow: hidden;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+#game {
+  position: relative;
+  /* Keep the 480x616 playfield aspect ratio and fit the window. */
+  height: min(100vh, calc(100vw * 616 / 480));
+  aspect-ratio: 480 / 616;
+  max-width: 100vw;
+}
+
+#screen {
+  width: 100%;
+  height: 100%;
+  image-rendering: pixelated;
+  display: block;
+}
+
+#overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px;
+  background: rgba(8, 6, 12, 0.55);
+}
+#overlay[hidden] { display: none; }
+
+.panel {
+  width: 100%;
+  max-height: 100%;
+  overflow-y: auto;
+  background: var(--panel);
+  border: 3px solid var(--edge);
+  border-radius: 6px;
+  padding: 18px 16px;
+  text-align: center;
+  font-size: 10px;
+  line-height: 1.7;
+}
+
+.panel h1 {
+  font-size: 34px;
+  line-height: 1.2;
+  margin: 8px 0 12px;
+  color: var(--accent);
+  text-shadow: 3px 3px 0 #c75b12, 6px 6px 0 #3b2c4d;
+}
+.panel h2 { font-size: 15px; margin: 4px 0 12px; color: var(--accent); }
+.panel h2.lose { color: var(--bad); }
+.panel h2.win { color: var(--good); }
+.tag { font-size: 11px; }
+.small { font-size: 9px; }
+.dim { color: var(--dim); }
+
+.buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  margin-top: 14px;
+}
+.title .buttons { flex-direction: column; align-items: center; }
+
+button {
+  font-family: var(--font);
+  font-size: 10px;
+  color: #1b1324;
+  background: var(--accent);
+  border: none;
+  border-bottom: 3px solid #c79a1c;
+  border-radius: 4px;
+  padding: 10px 14px;
+  cursor: pointer;
+}
+button:hover:not([disabled]), button:focus-visible { filter: brightness(1.12); outline: 2px solid #fff; }
+button[disabled] { opacity: 0.4; cursor: default; }
+button.ghost { background: transparent; color: var(--dim); border: 1px solid var(--edge); }
+
+.cards { display: grid; gap: 8px; text-align: left; }
+
+.card {
+  display: block;
+  width: 100%;
+  background: #241b30;
+  color: var(--text);
+  border: 2px solid var(--edge);
+  border-radius: 5px;
+  padding: 10px;
+  font-size: 9px;
+  line-height: 1.6;
+}
+.card p { margin: 6px 0; color: var(--dim); }
+.card.pick { position: relative; text-align: left; border-bottom-width: 2px; }
+.card.pick:hover, .card.pick:focus-visible { border-color: var(--accent); }
+.card.owned { opacity: 0.55; }
+.card button { margin-top: 4px; }
+.card-head { display: flex; justify-content: space-between; gap: 8px; }
+.card-head b { color: var(--text); }
+.card-head span { color: var(--accent); white-space: nowrap; }
+.key {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  color: var(--dim);
+  font-size: 8px;
+}
+
+.help { text-align: left; padding-left: 16px; font-size: 9px; }
+.help li { margin-bottom: 6px; }
+
+#touch { display: none; }
+
+@media (pointer: coarse) {
+  #touch {
+    display: flex;
+    width: 100%;
+    max-width: 480px;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 16px;
+  }
+  #game { height: min(calc(100vh - 150px), calc(100vw * 616 / 480)); }
+  .dpad {
+    display: grid;
+    grid-template-columns: repeat(3, 44px);
+    grid-template-rows: repeat(3, 44px);
+    gap: 4px;
+  }
+  .dpad [data-dir='up'] { grid-column: 2; grid-row: 1; }
+  .dpad [data-dir='left'] { grid-column: 1; grid-row: 2; }
+  .dpad [data-dir='right'] { grid-column: 3; grid-row: 2; }
+  .dpad [data-dir='down'] { grid-column: 2; grid-row: 3; }
+  .dpad button, .pump { touch-action: none; user-select: none; }
+  .pump { width: 96px; height: 96px; border-radius: 50%; font-size: 12px; }
+}
