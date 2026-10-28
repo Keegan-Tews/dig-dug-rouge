@@ -2,7 +2,7 @@
 
 import { ITEM_BY_ID, BOMB_FUSE } from './items.js';
 import { GEAR_BY_ID } from './gear.js';
-import { TILE, HUD_H, VIEW_COLS, VIEW_ROWS, T_DIRT, T_BEDROCK, layerFor, actFor, TOTAL_FLOORS } from './constants.js';
+import { TILE, HUD_H, VIEW_COLS, VIEW_ROWS, T_DIRT, T_BEDROCK, T_ICE, layerFor, actFor, TOTAL_FLOORS } from './constants.js';
 
 const DIRT = [
   null,
@@ -11,10 +11,11 @@ const DIRT = [
   ['#9b3f3a', '#7f302c'],
   ['#5d3a6e', '#472b56'],
 ];
+const DIRT_FROZEN = [null, ['#dfe9f0', '#c5d6e2'], ['#b9cfdf', '#a1bcd0'], ['#8fb0c9', '#7a9cb7'], ['#6987a6', '#56738f']];
 const DIRT_ACT3 = [null, ['#6b5b8a', '#584a74'], ['#4f4a7d', '#3f3b66'], ['#3d3a66', '#302d52'], ['#2a2847', '#201e38']];
 const TUNNEL = '#120d16';
 const KIND_COLOR = {
-  puff: '#7cb342', scorch: '#ff7043', gnawler: '#8d6e63', splitter: '#ba68c8', mini: '#f48fb1', shellback: '#26a69a',
+  puff: '#7cb342', scorch: '#ff7043', chiller: '#4fc3f7', gnawler: '#8d6e63', splitter: '#ba68c8', mini: '#f48fb1', shellback: '#26a69a',
 };
 
 export class Renderer {
@@ -103,6 +104,10 @@ export class Renderer {
         this.shake = Math.max(this.shake, 0.45);
       } else if (ev.type === 'use' && ev.item === 'frost') {
         this.burst(ev.x, ev.y, '#b3e5fc', 24);
+      } else if (ev.type === 'chill') {
+        this.addPopup(ev.x, ev.y, 'FROZEN!', '#81d4fa');
+      } else if (ev.type === 'shatter') {
+        this.burst(ev.x, ev.y + 0.4, '#e1f5fe', 10);
       } else if (ev.type === 'clang') {
         this.addPopup(ev.x, ev.y, 'CLANG', '#b0bec5');
         this.burst(ev.x, ev.y, '#eceff1', 5);
@@ -159,6 +164,7 @@ export class Renderer {
     this.drawGrid(sim, run);
     this.drawItems(sim, t);
     for (const r of sim.rocks) this.drawRock(r, t);
+    for (const ic of sim.icicles) this.drawIcicle(ic, t);
     for (const e of sim.enemies) this.drawFire(sim, e, t);
     this.drawGadgets(sim, t);
     this.drawHose(sim);
@@ -218,7 +224,7 @@ export class Renderer {
 
   drawGrid(sim, run) {
     const ctx = this.ctx;
-    const palette = actFor(run.floor).num === 3 ? DIRT_ACT3 : DIRT;
+    const palette = sim.zone === 'frozen' ? DIRT_FROZEN : actFor(run.floor).num === 3 ? DIRT_ACT3 : DIRT;
     // Sky / surface row.
     const sky = ctx.createLinearGradient(0, 0, 0, TILE);
     sky.addColorStop(0, '#203a5c');
@@ -244,6 +250,19 @@ export class Renderer {
             const sy = (h >> (i * 4 + 2)) & 0x1f;
             ctx.fillRect(px + (sx % 28) + 2, py + (sy % 28) + 2, 3, 3);
           }
+        } else if (tile === T_ICE) {
+          ctx.fillStyle = '#a7d8f0';
+          ctx.fillRect(px, py, TILE, TILE);
+          ctx.fillStyle = 'rgba(255,255,255,0.55)';
+          ctx.fillRect(px + 4, py + 4, 10, 3);
+          ctx.fillRect(px + 4, py + 4, 3, 8);
+          ctx.strokeStyle = 'rgba(70,130,180,0.5)';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(px + 18, py + 6);
+          ctx.lineTo(px + 24, py + 16);
+          ctx.lineTo(px + 20, py + 26);
+          ctx.stroke();
         } else if (tile === T_BEDROCK) {
           ctx.fillStyle = '#4a4a55';
           ctx.fillRect(px, py, TILE, TILE);
@@ -399,6 +418,34 @@ export class Renderer {
     ctx.fill();
   }
 
+  drawIcicle(ic, t) {
+    const ctx = this.ctx;
+    let x = ic.x * TILE + TILE / 2;
+    const top = (ic.state === 'falling' || ic.state === 'shatter' ? ic.fy : ic.y) * TILE;
+    if (ic.state === 'shake') x += Math.sin(t * 70) * 1.5;
+    if (ic.state === 'shatter') {
+      ctx.fillStyle = '#e1f5fe';
+      const k = 1 - ic.timer / 0.3;
+      for (let i = -2; i <= 2; i++) ctx.fillRect(x + i * 5 * (1 + k), top + TILE - 6 - k * 6 + Math.abs(i) * 2, 3, 3);
+      return;
+    }
+    ctx.fillStyle = '#e1f5fe';
+    ctx.beginPath();
+    ctx.moveTo(x - 8, top);
+    ctx.lineTo(x + 8, top);
+    ctx.lineTo(x + 1, top + 24);
+    ctx.lineTo(x - 1, top + 24);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = 'rgba(79,195,247,0.6)';
+    ctx.beginPath();
+    ctx.moveTo(x + 2, top);
+    ctx.lineTo(x + 8, top);
+    ctx.lineTo(x + 1, top + 24);
+    ctx.closePath();
+    ctx.fill();
+  }
+
   drawFire(sim, e, t) {
     const span = sim.fireSpan(e);
     if (!span) return;
@@ -408,9 +455,10 @@ export class Renderer {
     const x1 = span.x1 * TILE + TILE / 2;
     const g = ctx.createLinearGradient(x0, 0, x1, 0);
     const left = e.face === 'left';
-    g.addColorStop(left ? 1 : 0, '#fff59d');
-    g.addColorStop(0.5, '#ff9800');
-    g.addColorStop(left ? 0 : 1, 'rgba(229,57,53,0.6)');
+    const [c0, c1, c2] = e.frost ? ['#ffffff', '#81d4fa', 'rgba(41,182,246,0.5)'] : ['#fff59d', '#ff9800', 'rgba(229,57,53,0.6)'];
+    g.addColorStop(left ? 1 : 0, c0);
+    g.addColorStop(0.5, c1);
+    g.addColorStop(left ? 0 : 1, c2);
     ctx.fillStyle = g;
     const wob = Math.sin(t * 40) * 2;
     roundRect(ctx, x0, y - 9 - wob, x1 - x0, 18 + wob * 2, 9);
@@ -468,11 +516,14 @@ export class Renderer {
     ctx.translate(cx, cy);
     if (e.state === 'charge' && Math.floor(t * 16) % 2 === 0) ctx.globalAlpha = 0.6;
 
-    if (e.kind === 'scorch') {
+    if (e.kind === 'scorch' || e.kind === 'chiller') {
+      const pal = e.kind === 'chiller'
+        ? { body: '#29b6f6', head: '#4fc3f7', spikes: '#e1f5fe', feet: '#01579b' }
+        : { body: '#e64a19', head: '#ff7043', spikes: '#ffb300', feet: '#5d1f0f' };
       const bob = e.moving ? Math.sin(t * 14) * 1.5 : 0;
       ctx.scale(flip * scale, scale);
       // Salamander: body, tail, spikes, snout.
-      ctx.fillStyle = infl ? lerpColor('#e64a19', '#ffccbc', infl) : '#e64a19';
+      ctx.fillStyle = infl ? lerpColor(pal.body, '#ffffff', infl * 0.7) : pal.body;
       ctx.beginPath();
       ctx.ellipse(-1, 2 + bob, 11, 8, 0, 0, Math.PI * 2);
       ctx.fill();
@@ -481,7 +532,7 @@ export class Renderer {
       ctx.quadraticCurveTo(-16, -2, -15, 8);
       ctx.lineTo(-8, 6);
       ctx.fill();
-      ctx.fillStyle = '#ffb300';
+      ctx.fillStyle = pal.spikes;
       for (let i = -6; i <= 4; i += 5) {
         ctx.beginPath();
         ctx.moveTo(i - 2, -5 + bob);
@@ -489,7 +540,7 @@ export class Renderer {
         ctx.lineTo(i + 2, -5 + bob);
         ctx.fill();
       }
-      ctx.fillStyle = infl ? lerpColor('#ff7043', '#ffe0b2', infl) : '#ff7043';
+      ctx.fillStyle = infl ? lerpColor(pal.head, '#ffffff', infl * 0.7) : pal.head;
       ctx.beginPath();
       ctx.ellipse(9, 0 + bob, 6, 5, 0, 0, Math.PI * 2);
       ctx.fill();
@@ -497,7 +548,7 @@ export class Renderer {
       ctx.fillRect(8, -4 + bob, 4, 4);
       ctx.fillStyle = '#111';
       ctx.fillRect(10, -3 + bob, 2, 2);
-      ctx.fillStyle = '#5d1f0f';
+      ctx.fillStyle = pal.feet;
       ctx.fillRect(-8, 8 + bob, 3, 3);
       ctx.fillRect(4, 8 + bob, 3, 3);
     } else if (e.kind === 'gnawler') {
@@ -560,7 +611,7 @@ export class Renderer {
       // Puffling, Splitter, its Minis, and the boss (a crowned giant one).
       const squish = e.moving ? 1 + Math.sin(t * 12) * 0.06 : 1;
       ctx.scale(scale * squish, scale / squish);
-      const body = boss ? ['#7e57c2', '#ab47bc', '#26a69a'][e.level - 1] : KIND_COLOR[e.kind];
+      const body = boss ? (e.frost ? '#81d4fa' : ['#7e57c2', '#ab47bc', '#26a69a'][e.level - 1]) : KIND_COLOR[e.kind];
       ctx.fillStyle = infl ? lerpColor(body, '#f1f8e9', infl * 0.8) : body;
       ctx.beginPath();
       ctx.arc(0, 1, 11, Math.PI, 0);
@@ -734,6 +785,13 @@ export class Renderer {
     if (p.dir === 'down' && p.moving) ctx.rotate(Math.PI / 2 * flip);
     drawMiner(ctx, flip, step, !!sim.hose);
     ctx.restore();
+    if (p.chilled > 0) {
+      ctx.fillStyle = 'rgba(179,229,252,0.55)';
+      ctx.strokeStyle = '#e1f5fe';
+      ctx.lineWidth = 2;
+      ctx.fillRect(cx - 14, cy - 16, 28, 30);
+      ctx.strokeRect(cx - 14, cy - 16, 28, 30);
+    }
     if (p.shield > 0) {
       ctx.strokeStyle = `rgba(79,195,247,${0.35 + Math.sin(t * 4) * 0.15})`;
       ctx.lineWidth = 2;
@@ -778,7 +836,7 @@ export class Renderer {
     for (let y = 0; y < sim.rows; y++) {
       for (let x = 0; x < sim.cols; x++) {
         const t = sim.tile(x, y);
-        ctx.fillStyle = t === 0 ? '#1d1626' : t === T_BEDROCK ? '#5f5f6e' : '#6d4c41';
+        ctx.fillStyle = t === 0 ? '#1d1626' : t === T_BEDROCK ? '#5f5f6e' : t === T_ICE ? '#a7d8f0' : sim.zone === 'frozen' ? '#8fb0c9' : '#6d4c41';
         ctx.fillRect(ox + x * s, oy + y * s, s, s);
       }
     }

@@ -9,6 +9,7 @@ export const HUD_H = 40;
 export const T_OPEN = 0;
 export const T_DIRT = 1;
 export const T_BEDROCK = 2;
+export const T_ICE = 3;
 
 export const TOTAL_FLOORS = 20;
 export const BOSS_FLOORS = [7, 14, 20];
@@ -31,6 +32,29 @@ export const ACTS = [
 
 export function actFor(floor) {
   return ACTS.find((a) => floor >= a.first && floor <= a.last) || ACTS[ACTS.length - 1];
+}
+
+// Zones are the themed areas a floor belongs to. Acts listed in ROUTES let
+// the player choose which zone to dig through after the previous act's boss.
+export const ZONES = {
+  topsoil: { id: 'topsoil', name: 'Topsoil', act: 1, boss: 'The Bloat' },
+  bedrock: {
+    id: 'bedrock', name: 'Bedrock', act: 2, boss: 'Cinder Mother',
+    desc: 'Undiggable stone splits the map into lanes. More fire breathers.',
+  },
+  frozen: {
+    id: 'frozen', name: 'Frozen Caverns', act: 2, boss: 'The Rime Queen',
+    desc: 'Ice that is slow to dig, icicles that drop on anything below, and Chillers whose frost breath freezes you in place.',
+  },
+  deep: { id: 'deep', name: 'The Deep', act: 3, boss: 'The Deep King' },
+};
+
+export const ROUTES = { 2: ['bedrock', 'frozen'] };
+const DEFAULT_ZONE = { 1: 'topsoil', 2: 'bedrock', 3: 'deep' };
+
+export function zoneFor(floor, route = {}) {
+  const act = actFor(floor).num;
+  return ZONES[route[act] || DEFAULT_ZONE[act]];
 }
 
 // Depth layer 1..4 for a row, used for dirt colour and gold value.

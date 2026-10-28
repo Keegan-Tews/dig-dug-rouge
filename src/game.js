@@ -1,12 +1,16 @@
 // One floor of play. No DOM access: driven by update(dt, input) so it can be
 // tested headlessly and rendered by render.js.
 
-import { T_OPEN, T_DIRT, T_BEDROCK, DIRS, OPPOSITE, layerFor } from './constants.js';
+import { T_OPEN, T_DIRT, T_BEDROCK, T_ICE, DIRS, OPPOSITE, layerFor } from './constants.js';
 import { Rng } from './rng.js';
 import { GEAR, GEAR_BY_ID, GEAR_SLOTS, FULL_CHEST_FOSSILS } from './gear.js';
 import { BOMB_FUSE, BOMB_RADIUS, DRILL_TIME, DECOY_TIME, FROST_TIME, FROST_RANGE } from './items.js';
 
-const POP_AT = { puff: 4, scorch: 4, gnawler: 4, splitter: 3, mini: 2, shellback: 4 };
+const POP_AT = { puff: 4, scorch: 4, chiller: 4, gnawler: 4, splitter: 3, mini: 2, shellback: 4 };
+const ICE_DIG = 0.4; // speed multiplier while digging ice
+const ICICLE_FALL = 10;
+const ICICLE_SIGHT = 7; // how far below an icicle the player can be to set it off
+const CHILL_TIME = 1.5; // seconds frozen by frost breath
 const SPEED_MULT = { mini: 1.3, shellback: 0.8, gnawler: 0.9 };
 const BOSS_POP_AT = [0, 10, 14, 18];
 const HOSE_EXTEND = 16; // tiles per second
@@ -27,6 +31,7 @@ export class FloorSim {
     this.grid = Uint8Array.from(layout.grid);
     this.stats = stats;
     this.diff = layout.difficulty;
+    this.zone = layout.zone || 'topsoil';
     this.rng = new Rng(layout.seed ^ 0xa5a5a5a5);
 
     this.player = {
@@ -37,11 +42,13 @@ export class FloorSim {
       hearts: opts.hearts ?? 1,
       shield: stats.shield || 0,
       invuln: 0,
+      chilled: 0, // frozen in place by frost breath
       alive: true,
     };
     this.hose = null;
     this.enemies = layout.enemies.map((e, i) => this.makeEnemy(e, i));
     this.rocks = layout.rocks.map((r) => ({ x: r.x, y: r.y, fy: r.y, state: 'idle', timer: 0, kills: 0 }));
+    this.icicles = (layout.icicles || []).map((i) => ({ x: i.x, y: i.y, fy: i.y, state: 'idle', timer: 0 }));
     this.items = layout.items.map((it) => ({ ...it, taken: false }));
 
     // Usable items carried in the pack, and their effects in play.
@@ -89,6 +96,8 @@ export class FloorSim {
       speed: this.diff.enemySpeed * (boss ? 0.75 : SPEED_MULT[e.kind] || 1),
       radius: boss ? 0.85 : e.kind === 'mini' ? 0.45 : TOUCH,
       digging: false,
+      // Chillers and the Frozen Caverns boss breathe frost instead of fire.
+      frost: e.kind === 'chiller' || (boss && this.zone === 'frozen'),
     };
   }
 
@@ -136,6 +145,7 @@ export class FloorSim {
     if (this.status === 'dying' || this.status === 'clearing') {
       this.statusTimer -= dt;
       this.updateRocks(dt);
+      this.updateIcicles(dt);
       this.updateCorpses(dt);
       if (this.statusTimer <= 0) this.status = this.status === 'dying' ? 'dead' : 'cleared';
       return;
@@ -149,6 +159,7 @@ export class FloorSim {
     this.updateItems(dt, input);
     this.updateHose(dt, input);
     this.updateRocks(dt);
+    this.updateIcicles(dt);
     this.updateEnemies(dt);
     this.updateCorpses(dt);
     this.checkContacts();
@@ -165,6 +176,11 @@ export class FloorSim {
   updatePlayer(dt, input) {
     const p = this.player;
     p.walking = false;
+    if (p.chilled > 0) {
+      p.chilled -= dt;
+      this.hose = null;
+      return;
+    }
     if (this.hose && this.hose.state !== 'retract') {
       if (input.dir && this.hose.state === 'attached') this.hose = null;
       else return; // standing still while the hose is out
@@ -189,7 +205,8 @@ export class FloorSim {
 
     p.walking = true;
     const drill = this.drillTime > 0;
-    const speed = this.stats.speed * (drill ? 1.5 : 1) * (p.digging && !drill ? this.stats.digPenalty : 1);
+    const digMult = p.digging && !drill ? this.stats.digPenalty * (p.digging === 'ice' ? ICE_DIG : 1) : 1;
+    const speed = this.stats.speed * (drill ? 1.5 : 1) * digMult;
     const remaining = Math.abs(p.tx - p.x) + Math.abs(p.ty - p.y);
     const step = speed * dt;
     if (step >= remaining) {
@@ -214,7 +231,8 @@ export class FloorSim {
     const nx = p.x + dx;
     const ny = p.y + dy;
     if (!this.canDig(nx, ny)) return false;
-    p.digging = this.tile(nx, ny) === T_DIRT;
+    const t = this.tile(nx, ny);
+    p.digging = t === T_DIRT ? 'dirt' : t === T_ICE ? 'ice' : false;
     if (p.digging) {
       this.grid[ny * this.cols + nx] = T_OPEN;
       this.emit('dig', { x: nx, y: ny });
@@ -313,7 +331,8 @@ export class FloorSim {
     for (let y = b.y - r; y <= b.y + r; y++) {
       for (let x = b.x - r; x <= b.x + r; x++) {
         if (y < 1 || !this.inBounds(x, y) || dist(x, y, b.x, b.y) > BOMB_RADIUS) continue;
-        if (this.tile(x, y) === T_DIRT) this.grid[y * this.cols + x] = T_OPEN;
+        const t = this.tile(x, y);
+        if (t === T_DIRT || t === T_ICE) this.grid[y * this.cols + x] = T_OPEN;
         const rock = this.rockAt(x, y);
         if (rock) {
           rock.state = 'breaking';
@@ -653,6 +672,7 @@ export class FloorSim {
           e.timer -= dt;
           const range = e.kind === 'boss' ? 4 : 3;
           e.fireLen = Math.min(this.fireReach(e, range), e.fireLen + 12 * dt);
+          if (!e.frost) this.meltIce(e);
           if (e.timer <= 0) {
             e.state = 'walk';
             e.fireLen = 0;
@@ -697,7 +717,7 @@ export class FloorSim {
   enemyWalk(e, dt) {
     const p = this.player;
     // Fire breathers take a breath when the player is level with them.
-    const breathes = e.kind === 'scorch' || (e.kind === 'boss' && e.level >= 2);
+    const breathes = e.kind === 'scorch' || e.kind === 'chiller' || (e.kind === 'boss' && e.level >= 2);
     if (breathes) e.fireCooldown -= dt;
     if (breathes && !e.moving) {
       const sameRow = Math.abs(p.y - e.y) < 0.5;
@@ -750,7 +770,8 @@ export class FloorSim {
       e.tx = e.x + dx;
       e.ty = e.y + dy;
       e.moving = true;
-      e.digging = this.tile(e.tx, e.ty) === T_DIRT;
+      const t = this.tile(e.tx, e.ty);
+      e.digging = t === T_DIRT ? 'dirt' : t === T_ICE ? 'ice' : false;
       if (e.digging) this.grid[e.ty * this.cols + e.tx] = T_OPEN;
     }
 
@@ -762,7 +783,7 @@ export class FloorSim {
       e.dir = OPPOSITE[e.dir];
     }
     const remaining = Math.abs(e.tx - e.x) + Math.abs(e.ty - e.y);
-    const step = e.speed * (e.digging ? 0.55 : 1) * dt;
+    const step = e.speed * (e.digging ? (e.digging === 'ice' ? 0.3 : 0.55) : 1) * dt;
     if (step >= remaining) {
       e.x = e.tx;
       e.y = e.ty;
@@ -818,6 +839,67 @@ export class FloorSim {
     return reach;
   }
 
+  // Fire breath melts any ice it passes through.
+  meltIce(e) {
+    const span = this.fireSpan(e);
+    if (!span) return;
+    const y = Math.round(span.y);
+    for (let x = Math.ceil(span.x0 - 0.5); x <= Math.floor(span.x1 + 0.5); x++) {
+      if (this.inBounds(x, y) && this.tile(x, y) === T_ICE) this.grid[y * this.cols + x] = T_OPEN;
+    }
+  }
+
+  // ---- icicles ----
+
+  updateIcicles(dt) {
+    const p = this.player;
+    for (const ic of this.icicles) {
+      if (ic.state === 'idle') {
+        if (!p.alive || Math.abs(p.x - ic.x) > 0.45 || p.y <= ic.y || p.y - ic.y > ICICLE_SIGHT) continue;
+        // Only when nothing solid is between the icicle and the player.
+        let clear = true;
+        for (let y = ic.y + 1; y < Math.round(p.y) && clear; y++) if (!this.isOpen(ic.x, y)) clear = false;
+        if (!clear) continue;
+        ic.state = 'shake';
+        ic.timer = 0.35;
+        this.emit('crack', { x: ic.x, y: ic.y });
+      } else if (ic.state === 'shake') {
+        ic.timer -= dt;
+        if (ic.timer <= 0) ic.state = 'falling';
+      } else if (ic.state === 'falling') {
+        ic.fy += ICICLE_FALL * dt;
+        this.icicleHits(ic);
+        const below = Math.floor(ic.fy) + 1;
+        if (!this.isOpen(ic.x, below)) {
+          ic.fy = Math.floor(ic.fy);
+          ic.state = 'shatter';
+          ic.timer = 0.3;
+          this.emit('shatter', { x: ic.x, y: ic.fy });
+        }
+      } else if (ic.state === 'shatter') {
+        ic.timer -= dt;
+        if (ic.timer <= 0) ic.state = 'gone';
+      }
+    }
+    this.icicles = this.icicles.filter((ic) => ic.state !== 'gone');
+  }
+
+  icicleHits(ic) {
+    const hits = (x, y) => Math.abs(x - ic.x) < 0.5 && Math.abs(y - ic.fy) < 0.6;
+    for (const e of this.enemies) {
+      if (e.state === 'popped' || e.state === 'crushed' || e.kind === 'boss' || !hits(e.x, e.y)) continue;
+      e.state = 'crushed';
+      e.timer = 0.6;
+      this.kills += 1;
+      if (this.hose && this.hose.target === e) this.hose = null;
+      const g = Math.round(this.enemyGold(e) * this.stats.goldMult);
+      this.gold += g;
+      this.emit('pop', { x: e.x, y: e.y, amount: g, kind: e.kind });
+    }
+    const p = this.player;
+    if (p.alive && hits(p.x, p.y)) this.hurtPlayer('icicle');
+  }
+
   fireSpan(e) {
     if (e.state !== 'fire' || e.fireLen <= 0) return null;
     const s = e.face === 'left' ? -1 : 1;
@@ -838,7 +920,14 @@ export class FloorSim {
         }
       }
       const span = this.fireSpan(e);
-      if (span && !this.stats.fireproof && Math.abs(p.y - span.y) < 0.6 && p.x > span.x0 - 0.3 && p.x < span.x1 + 0.3) {
+      const inBreath = span && Math.abs(p.y - span.y) < 0.6 && p.x > span.x0 - 0.3 && p.x < span.x1 + 0.3;
+      if (inBreath && e.frost) {
+        // Frost breath doesn't hurt, it freezes you in place.
+        if (p.chilled <= 0 && p.invuln <= 0) {
+          p.chilled = CHILL_TIME;
+          this.emit('chill', { x: p.x, y: p.y });
+        }
+      } else if (inBreath && !this.stats.fireproof) {
         this.hurtPlayer('fire');
         return;
       }

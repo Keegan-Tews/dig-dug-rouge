@@ -30,9 +30,10 @@ Touch devices get an on-screen d-pad plus pump, item and switch buttons.
 
 ## The run
 
-- **20 floors in 3 acts:** Topsoil (1 to 7), Bedrock (8 to 14, with undiggable bedrock) and The Deep (15 to 20).
+- **20 floors in 3 acts:** Topsoil (1 to 7), then a choice of path for Act II (8 to 14), then The Deep (15 to 20).
+- **The path splits** after the Act I boss. **Bedrock** has undiggable stone and more fire breathers. **Frozen Caverns** has ice that is slow to dig, icicles that drop on whatever walks beneath them (foes included), and Chillers.
 - **Scrolling maps** that grow each act (19x24, 23x30, then 27x36 tiles). The camera follows you and a minimap shows the whole floor.
-- **Bosses** on floors 7, 14 and 20: The Bloat, Cinder Mother and The Deep King. They take many pumps, spawn minions and (later) breathe fire.
+- **Bosses** on floors 7, 14 and 20: The Bloat, Cinder Mother and The Deep King. They take many pumps, spawn minions and (later) breathe fire. Take the Frozen Caverns and the Act II boss is The Rime Queen, who breathes frost instead.
 - **One hit and you're out.** Every run starts with one heart. Extra hearts come from the Spare Heart upgrade and shop heals; Hard Hats block one hit per floor. Falling rocks always kill.
 - **After every floor**, pick one of three upgrades. **Every 3rd floor** has the Mole Market shop.
 - **Gold** is lost when you die. **Fossils** (one or two buried in the deeper half of every floor) are banked between runs and spent in the **Fossil Vault** on permanent stat upgrades (speed, gold, hose reach, deflate time, an extra per-floor shield, extra starting hearts), new classes and new upgrade-pool options.
@@ -62,9 +63,10 @@ The first time you ever get each item or piece of gear, the game pauses with a s
 ### Foes
 
 - **Pufflings** wander tunnels and, after a while, drift through dirt as ghostly eyes.
-- **Scorchlings** do the same and also breathe fire sideways, through dirt.
+- **Scorchlings** do the same and also breathe fire sideways, through dirt. Fire melts ice.
 - **Gnawlers** (from floor 4) never ghost; they chew real tunnels straight toward you, which can bring rocks down.
 - **Splitters** (from floor 8) pop in 3 pumps but burst into two fast little **Minis**.
+- **Chillers** (Frozen Caverns only) replace Scorchlings. Their frost breath doesn't hurt, but it freezes you in place for a moment and cuts your hose.
 - **Shellbacks** (from floor 12) have an armour plate on the side they face. A hose that hits them head-on just clangs off, so get behind or beside them, or drop a rock.
 
 ## Code layout

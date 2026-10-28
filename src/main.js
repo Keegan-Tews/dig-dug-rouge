@@ -1,6 +1,6 @@
 // Entry point: scenes, the fixed-step loop, and menu overlays.
 
-import { actFor, TOTAL_FLOORS } from './constants.js';
+import { actFor, TOTAL_FLOORS, ZONES } from './constants.js';
 import { randomSeed } from './rng.js';
 import { generateFloor } from './levelgen.js';
 import { FloorSim } from './game.js';
@@ -17,11 +17,10 @@ import {
 import {
   newRun, runStats, floorSeed, screensAfterFloor, rewardChoices, applyUpgrade,
   shopStock, buyShopItem, completeFloor, advanceFloor, failRun, winRun, rngFor,
-  isBossFloor, REROLL_PRICE, MAX_HEARTS,
+  isBossFloor, REROLL_PRICE, MAX_HEARTS, routeOptions, chooseRoute, runZone,
 } from './run.js';
 
 const STEP = 1 / 120;
-const BOSS_NAMES = ['', 'The Bloat', 'Cinder Mother', 'The Deep King'];
 
 const canvas = document.getElementById('screen');
 const overlay = document.getElementById('overlay');
@@ -171,7 +170,8 @@ function startRun(classId) {
 function startFloor() {
   const run = state.run;
   const stats = runStats(run);
-  const layout = generateFloor(run.floor, floorSeed(run), { fossilLuck: stats.fossilLuck });
+  const zone = runZone(run);
+  const layout = generateFloor(run.floor, floorSeed(run), { fossilLuck: stats.fossilLuck, zone: zone.id });
   state.sim = new FloorSim(layout, stats, { hearts: run.hearts, items: run.items, gear: run.gear });
   // Explain anything carried in (starting items, shop buys) that is new to this player.
   for (const id of run.items) queueTip('item', id);
@@ -182,8 +182,8 @@ function startFloor() {
   const act = actFor(run.floor);
   const boss = isBossFloor(run.floor);
   state.banner = {
-    title: boss ? BOSS_NAMES[layout.boss] : `FLOOR ${run.floor}`,
-    sub: boss ? `Boss of Act ${act.num}` : `Act ${act.num}: ${act.name}`,
+    title: boss ? zone.boss : `FLOOR ${run.floor}`,
+    sub: boss ? `Boss of ${zone.name}` : `Act ${act.num}: ${zone.name}`,
     color: boss ? '#ef5350' : '#ffd54f',
     t: 1.6,
   };
@@ -204,6 +204,7 @@ function nextScreen() {
   const next = state.queue.shift();
   if (next === 'reward') return showReward();
   if (next === 'shop') return showShop();
+  if (next === 'route') return showRoute();
   if (next === 'victory') return showEnd(true);
   advanceFloor(state.run);
   startFloor();
@@ -270,6 +271,23 @@ function showShop(fresh = true) {
         <button data-action="reroll" ${run.gold >= REROLL_PRICE ? '' : 'disabled'}>Reroll (${REROLL_PRICE}g)</button>
         <button data-action="continue">Descend</button>
       </div>
+    </div>`);
+}
+
+function showRoute() {
+  state.scene = 'route';
+  const cards = routeOptions(state.run)
+    .map((id, i) => {
+      const z = ZONES[id];
+      return `<button class="card pick" data-action="route" data-id="${id}"><span class="key">${i + 1}</span>
+        <div class="card-head"><b>${z.name}</b><span>Boss: ${z.boss}</span></div><p>${z.desc}</p></button>`;
+    })
+    .join('');
+  el(`
+    <div class="panel">
+      <h2>The path splits</h2>
+      <p class="small">Choose which way to dig for the next act. You can't turn back.</p>
+      <div class="cards">${cards}</div>
     </div>`);
 }
 
@@ -407,6 +425,12 @@ const actions = {
     showShop(false);
   },
   continue: () => nextScreen(),
+  route: (b) => {
+    if (chooseRoute(state.run, b.dataset.id)) {
+      sfx.play('select');
+      nextScreen();
+    }
+  },
 };
 
 overlay.addEventListener('click', (e) => {
@@ -433,10 +457,17 @@ input.onPress((code) => {
   if (state.scene === 'reward' && /^Digit[1-4]$/.test(code)) {
     const id = state.choices?.[Number(code.slice(5)) - 1];
     if (id) actions.pick({ dataset: { id } });
+    return;
+  }
+  if (state.scene === 'route' && /^Digit[1-4]$/.test(code)) {
+    const id = routeOptions(state.run)[Number(code.slice(5)) - 1];
+    if (id) actions.route({ dataset: { id } });
+    return;
   }
   if (state.scene === 'classes' && /^Digit[1-4]$/.test(code)) {
     const c = CLASSES[Number(code.slice(5)) - 1];
     if (c && classUnlocked(c, state.meta.unlocked)) startRun(c.id);
+    return;
   }
   if (state.scene === 'title' && code === 'Enter') showClasses();
 });
