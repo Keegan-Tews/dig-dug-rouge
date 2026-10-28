@@ -220,3 +220,56 @@ test('brute pops foes in three pumps', () => {
   }
   assert.equal(sim.kills, 1);
 });
+
+test('gnawlers chew their own tunnels toward the player', () => {
+  const sim = new FloorSim(layoutFrom([
+    '##########',
+    'P#######.n',
+    '##########',
+  ]), stats(), { hearts: 1 });
+  const dirtBefore = Array.from(sim.grid).filter((t) => t === 1).length;
+  run(sim, 15);
+  const dirtAfter = Array.from(sim.grid).filter((t) => t === 1).length;
+  assert.ok(dirtAfter < dirtBefore, 'dug some dirt');
+  assert.ok(sim.enemies.every((e) => e.state !== 'ghost'), 'never ghosts');
+  assert.equal(sim.player.alive, false);
+});
+
+test('splitters burst into two minis that must also be popped', () => {
+  const sim = new FloorSim(layoutFrom([
+    '##########',
+    'P..v######',
+    '##########',
+  ]), stats({ deflateDelay: 5 }));
+  sim.freeze = 99;
+  for (let i = 0; i < 3; i++) {
+    sim.update(1 / 120, { pumpPressed: true });
+    run(sim, 0.25);
+  }
+  run(sim, 0.5);
+  const minis = sim.enemies.filter((e) => e.kind === 'mini');
+  assert.equal(minis.length, 2);
+  assert.equal(sim.status, 'playing');
+});
+
+test('shellbacks block a head-on hose but pop from behind', () => {
+  const make = () => new FloorSim(layoutFrom([
+    '#########',
+    'P..k####p',
+  ]), stats({ deflateDelay: 5 }));
+  const front = make();
+  front.freeze = 99;
+  front.enemies[0].dir = 'left'; // facing the player
+  front.update(1 / 120, { pumpPressed: true });
+  run(front, 0.4);
+  assert.equal(front.enemies[0].state, 'walk');
+
+  const back = make();
+  back.freeze = 99;
+  back.enemies[0].dir = 'right'; // facing away
+  for (let i = 0; i < 4; i++) {
+    back.update(1 / 120, { pumpPressed: true });
+    run(back, 0.25);
+  }
+  assert.equal(back.kills, 1);
+});

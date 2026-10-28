@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { generateFloor } from '../src/levelgen.js';
+import { generateFloor, pickKind, difficulty, FOE_INTRO } from '../src/levelgen.js';
+import { Rng } from '../src/rng.js';
 import { T_OPEN, T_DIRT, BOSS_FLOORS } from '../src/constants.js';
 
 test('same floor and seed give the same layout', () => {
@@ -42,4 +43,26 @@ test('every floor 1-20 generates valid layouts across many seeds', () => {
 
 test('later floors have more enemies', () => {
   assert.ok(generateFloor(19, 9).enemies.length > generateFloor(1, 9).enemies.length);
+});
+
+test('every floor buries one or two fossils', () => {
+  for (let floor = 1; floor <= 20; floor++) {
+    for (let seed = 0; seed < 20; seed++) {
+      const n = generateFloor(floor, seed * 13 + 5).items.filter((i) => i.kind === 'fossil').length;
+      assert.ok(n >= 1 && n <= 2, `floor ${floor} has ${n} fossils`);
+    }
+  }
+});
+
+test('new foe types only appear from their intro floor on', () => {
+  const rng = new Rng(9);
+  const seen = (floor) => {
+    const kinds = new Set();
+    for (let i = 0; i < 400; i++) kinds.add(pickKind(rng, floor, difficulty(floor)));
+    return kinds;
+  };
+  const early = seen(1);
+  for (const kind of Object.keys(FOE_INTRO)) assert.ok(!early.has(kind), `${kind} not on floor 1`);
+  const late = seen(16);
+  for (const kind of ['puff', 'scorch', ...Object.keys(FOE_INTRO)]) assert.ok(late.has(kind), `${kind} on floor 16`);
 });

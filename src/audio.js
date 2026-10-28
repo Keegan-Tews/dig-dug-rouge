@@ -11,6 +11,8 @@ const SOUNDS = {
   gold: { type: 'square', f: [880, 1320], d: 0.1, v: 0.05 },
   fossil: { type: 'triangle', f: [660, 1760], d: 0.3, v: 0.08 },
   fire: { type: 'sawtooth', f: [200, 90], d: 0.4, v: 0.06 },
+  clang: { type: 'square', f: [1400, 1300], d: 0.08, v: 0.06 },
+  split: { type: 'sine', f: [500, 900], d: 0.15, v: 0.07 },
   shield: { type: 'triangle', f: [1200, 600], d: 0.2, v: 0.08 },
   hurt: { type: 'square', f: [400, 100], d: 0.3, v: 0.1 },
   death: { type: 'square', f: [600, 60], d: 0.9, v: 0.12 },

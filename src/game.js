@@ -4,7 +4,8 @@
 import { T_OPEN, T_DIRT, T_BEDROCK, DIRS, OPPOSITE, layerFor } from './constants.js';
 import { Rng } from './rng.js';
 
-const POP_AT = { puff: 4, scorch: 4 };
+const POP_AT = { puff: 4, scorch: 4, gnawler: 4, splitter: 3, mini: 2, shellback: 4 };
+const SPEED_MULT = { mini: 1.3, shellback: 0.8, gnawler: 0.9 };
 const BOSS_POP_AT = [0, 10, 14, 18];
 const HOSE_EXTEND = 16; // tiles per second
 const HOSE_RETRACT = 24;
@@ -65,7 +66,8 @@ export class FloorSim {
       moving: false,
       state: e.state || 'walk',
       ghostTime: e.ghostTime || 0,
-      ghostTimer: this.ghostDelay() * (boss ? 0.7 : 1),
+      // Gnawlers never ghost: they chew real tunnels instead.
+      ghostTimer: e.kind === 'gnawler' ? Infinity : this.ghostDelay() * (boss ? 0.7 : 1),
       inflation: 0,
       popAt: boss ? BOSS_POP_AT[level] : POP_AT[e.kind],
       deflateTimer: 0,
@@ -73,8 +75,9 @@ export class FloorSim {
       fireCooldown: this.rng.float(2, 4),
       fireLen: 0,
       spawnTimer: 6,
-      speed: this.diff.enemySpeed * (boss ? 0.75 : 1),
-      radius: boss ? 0.85 : TOUCH,
+      speed: this.diff.enemySpeed * (boss ? 0.75 : SPEED_MULT[e.kind] || 1),
+      radius: boss ? 0.85 : e.kind === 'mini' ? 0.45 : TOUCH,
+      digging: false,
     };
   }
 
@@ -280,6 +283,12 @@ export class FloorSim {
           return;
         }
         const hit = this.enemies.find((e) => this.pumpable(e) && dist(tx, ty, e.x, e.y) < (e.kind === 'boss' ? 0.95 : 0.55));
+        if (hit && this.armored(hit, h.dir)) {
+          h.len = l;
+          h.state = 'retract';
+          this.emit('clang', { x: hit.x, y: hit.y });
+          return;
+        }
         if (hit) {
           h.len = l;
           h.state = 'attached';
@@ -343,6 +352,11 @@ export class FloorSim {
     return Math.max(1, e.popAt - (this.stats.popDiscount || 0) * (e.kind === 'boss' ? 2 : 1));
   }
 
+  // Shellbacks shrug off a hose that hits their armoured front.
+  armored(e, hoseDir) {
+    return e.kind === 'shellback' && (e.state === 'walk' || e.state === 'charge') && hoseDir === OPPOSITE[e.dir];
+  }
+
   pop(e) {
     e.state = 'popped';
     e.timer = 0.35;
@@ -351,6 +365,7 @@ export class FloorSim {
     this.gold += g;
     this.kills += 1;
     this.emit('pop', { x: e.x, y: e.y, amount: g, kind: e.kind });
+    if (e.kind === 'splitter') this.split(e);
     if (e.kind === 'boss') {
       for (const o of this.enemies) {
         if (o !== e && o.state !== 'popped' && o.state !== 'crushed') {
@@ -362,10 +377,25 @@ export class FloorSim {
     }
   }
 
+  split(e) {
+    const x = Math.round(e.x);
+    const y = Math.round(e.y);
+    const open = this.isOpen(x, y);
+    for (let i = 0; i < 2; i++) {
+      const m = this.makeEnemy({ kind: 'mini', x, y, state: open ? 'walk' : 'ghost', ghostTime: 0 }, this.nextId++);
+      m.dir = i === 0 ? 'left' : 'right';
+      m.face = m.dir;
+      this.enemies.push(m);
+    }
+    this.emit('split', { x, y });
+  }
+
   enemyGold(e) {
     if (e.kind === 'boss') return 25 * e.level;
+    if (e.kind === 'mini') return 1;
     const layer = Math.max(1, layerFor(Math.round(e.y), this.rows));
-    return 1 + layer + (e.kind === 'scorch' ? 2 : 0);
+    const extra = { scorch: 2, gnawler: 1, splitter: 1, shellback: 3 }[e.kind] || 0;
+    return 1 + layer + extra;
   }
 
   // ---- rocks ----
@@ -557,15 +587,20 @@ export class FloorSim {
     }
 
     if (!e.moving) {
+      // Gnawlers within range chew straight through dirt toward the player.
+      const chewing = e.kind === 'gnawler' && dist(e.x, e.y, p.x, p.y) <= GHOST_RANGE;
       const options = Object.keys(DIRS).filter((d) => {
         const [dx, dy] = DIRS[d];
-        return this.isOpen(e.x + dx, e.y + dy) && !(e.y + dy === 0 && e.kind === 'boss');
+        const nx = e.x + dx;
+        const ny = e.y + dy;
+        if (chewing) return ny >= 1 && this.canDig(nx, ny);
+        return this.isOpen(nx, ny) && !(ny === 0 && e.kind === 'boss');
       });
       if (options.length === 0) return;
       let choices = options.filter((d) => d !== OPPOSITE[e.dir]);
       if (choices.length === 0) choices = options;
       let dir;
-      if (this.rng.chance(this.diff.chase)) {
+      if (this.rng.chance(chewing ? 0.85 : this.diff.chase)) {
         dir = choices.reduce((best, d) => {
           const [dx, dy] = DIRS[d];
           const score = dist(e.x + dx, e.y + dy, p.x, p.y);
@@ -580,6 +615,8 @@ export class FloorSim {
       e.tx = e.x + dx;
       e.ty = e.y + dy;
       e.moving = true;
+      e.digging = this.tile(e.tx, e.ty) === T_DIRT;
+      if (e.digging) this.grid[e.ty * this.cols + e.tx] = T_OPEN;
     }
 
     // A rock may have landed in the way.
@@ -590,11 +627,12 @@ export class FloorSim {
       e.dir = OPPOSITE[e.dir];
     }
     const remaining = Math.abs(e.tx - e.x) + Math.abs(e.ty - e.y);
-    const step = e.speed * dt;
+    const step = e.speed * (e.digging ? 0.55 : 1) * dt;
     if (step >= remaining) {
       e.x = e.tx;
       e.y = e.ty;
       e.moving = false;
+      e.digging = false;
     } else {
       const sx = Math.sign(e.tx - e.x);
       const sy = Math.sign(e.ty - e.y);

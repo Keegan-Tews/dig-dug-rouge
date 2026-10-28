@@ -33,7 +33,7 @@ Touch devices get an on-screen d-pad and pump button.
 - **Bosses** on floors 7, 14 and 20: The Bloat, Cinder Mother and The Deep King. They take many pumps, spawn minions and (later) breathe fire.
 - **One hit and you're out.** Every run starts with one heart. Extra hearts come from the Spare Heart upgrade and shop heals; Hard Hats block one hit per floor. Falling rocks always kill.
 - **After every floor**, pick one of three upgrades. **Every 3rd floor** has the Mole Market shop.
-- **Gold** is lost when you die. **Fossils** dug up in the deeper layers are banked between runs and spent in the **Fossil Vault** on permanent stat upgrades (speed, gold, hose reach, deflate time, an extra per-floor shield, extra starting hearts), new classes and new upgrade-pool options.
+- **Gold** is lost when you die. **Fossils** (one or two buried in the deeper half of every floor) are banked between runs and spent in the **Fossil Vault** on permanent stat upgrades (speed, gold, hose reach, deflate time, an extra per-floor shield, extra starting hearts), new classes and new upgrade-pool options.
 - **Classes:** Digger (all-rounder), plus Sapper (fast digger, shorter hose) and Brute (slow, starts with a Hard Hat, pops foes in 3 pumps), which are unlocked in the vault.
 - Every floor is generated from the run seed, so a run can be replayed.
 
@@ -41,6 +41,9 @@ Touch devices get an on-screen d-pad and pump button.
 
 - **Pufflings** wander tunnels and, after a while, drift through dirt as ghostly eyes.
 - **Scorchlings** do the same and also breathe fire sideways, through dirt.
+- **Gnawlers** (from floor 4) never ghost; they chew real tunnels straight toward you, which can bring rocks down.
+- **Splitters** (from floor 8) pop in 3 pumps but burst into two fast little **Minis**.
+- **Shellbacks** (from floor 12) have an armour plate on the side they face. A hose that hits them head-on just clangs off, so get behind or beside them, or drop a rock.
 
 ## Code layout
 

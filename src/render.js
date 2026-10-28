@@ -11,6 +11,9 @@ const DIRT = [
 ];
 const DIRT_ACT3 = [null, ['#6b5b8a', '#584a74'], ['#4f4a7d', '#3f3b66'], ['#3d3a66', '#302d52'], ['#2a2847', '#201e38']];
 const TUNNEL = '#120d16';
+const KIND_COLOR = {
+  puff: '#7cb342', scorch: '#ff7043', gnawler: '#8d6e63', splitter: '#ba68c8', mini: '#f48fb1', shellback: '#26a69a',
+};
 
 export class Renderer {
   constructor(canvas) {
@@ -66,7 +69,7 @@ export class Renderer {
     for (const ev of events) {
       if (ev.type === 'pop') {
         this.addPopup(ev.x, ev.y, `+${ev.amount}g`);
-        this.burst(ev.x, ev.y, ev.kind === 'scorch' ? '#ff7043' : ev.kind === 'boss' ? '#ffd54f' : '#9ccc65', ev.kind === 'boss' ? 40 : 14);
+        this.burst(ev.x, ev.y, ev.kind === 'boss' ? '#ffd54f' : KIND_COLOR[ev.kind] || '#9ccc65', ev.kind === 'boss' ? 40 : 14);
         if (ev.kind === 'boss') this.shake = 0.6;
       } else if (ev.type === 'crush') {
         this.addPopup(ev.x, ev.y, `CRUSH x${ev.kills} +${ev.amount}g`, '#ffab40');
@@ -85,6 +88,11 @@ export class Renderer {
       } else if (ev.type === 'shield') {
         this.addPopup(this.lastPlayer?.x ?? 7, this.lastPlayer?.y ?? 8, 'BLOCKED', '#4fc3f7');
         this.shake = 0.2;
+      } else if (ev.type === 'clang') {
+        this.addPopup(ev.x, ev.y, 'CLANG', '#b0bec5');
+        this.burst(ev.x, ev.y, '#eceff1', 5);
+      } else if (ev.type === 'split') {
+        this.addPopup(ev.x, ev.y, 'SPLIT!', '#f48fb1');
       } else if (ev.type === 'hurt') {
         this.shake = 0.3;
       } else if (ev.type === 'death') {
@@ -168,8 +176,8 @@ export class Renderer {
     ctx.fillText(`F${run.floor}/${TOTAL_FLOORS}`, 8, y);
 
     // Hearts
-    for (let i = 0; i < sim.player.hearts; i++) drawHeart(ctx, 100 + i * 18, y, 7);
-    for (let i = 0; i < sim.player.shield; i++) drawShield(ctx, 108 + (sim.player.hearts + i) * 18, y, 7);
+    for (let i = 0; i < sim.player.hearts; i++) drawHeart(ctx, 114 + i * 18, y, 7);
+    for (let i = 0; i < sim.player.shield; i++) drawShield(ctx, 114 + (sim.player.hearts + i) * 18, y, 7);
 
     ctx.textAlign = 'right';
     ctx.fillStyle = '#ffd54f';
@@ -386,7 +394,7 @@ export class Renderer {
       return;
     }
     if (e.state === 'crushed') {
-      ctx.fillStyle = e.kind === 'scorch' ? '#d84315' : '#7cb342';
+      ctx.fillStyle = KIND_COLOR[e.kind] || '#7cb342';
       ctx.beginPath();
       ctx.ellipse(cx, cy + 8, 14, 4, 0, 0, Math.PI * 2);
       ctx.fill();
@@ -400,13 +408,13 @@ export class Renderer {
       ctx.beginPath();
       ctx.arc(cx, cy, 11 * base, 0, Math.PI * 2);
       ctx.fill();
-      drawEyes(ctx, cx, cy, flip, base, '#fff', e.kind === 'scorch' ? '#ff7043' : '#7cb342');
+      drawEyes(ctx, cx, cy, flip, e.kind === 'mini' ? 0.7 : base, '#fff', KIND_COLOR[e.kind] || '#ffd54f');
       ctx.globalAlpha = 1;
       return;
     }
 
     const infl = e.state === 'inflated' ? Math.min(1, e.inflation / this.popThresholdFor(e)) : 0;
-    const scale = base * (1 + infl * 0.9);
+    const scale = base * (e.kind === 'mini' ? 0.6 : 1) * (1 + infl * 0.9);
     ctx.save();
     ctx.translate(cx, cy);
     if (e.state === 'charge' && Math.floor(t * 16) % 2 === 0) ctx.globalAlpha = 0.6;
@@ -443,11 +451,67 @@ export class Renderer {
       ctx.fillStyle = '#5d1f0f';
       ctx.fillRect(-8, 8 + bob, 3, 3);
       ctx.fillRect(4, 8 + bob, 3, 3);
+    } else if (e.kind === 'gnawler') {
+      // Mole-like chewer with a drill snout; it shudders while digging.
+      const shake = e.digging ? Math.sin(t * 50) * 1 : 0;
+      ctx.scale(flip * scale, scale);
+      ctx.translate(shake, 0);
+      ctx.fillStyle = infl ? lerpColor('#8d6e63', '#efebe9', infl) : '#8d6e63';
+      ctx.beginPath();
+      ctx.ellipse(-2, 2, 11, 9, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#bdbdbd';
+      ctx.beginPath();
+      ctx.moveTo(7, -4);
+      ctx.lineTo(16, 1);
+      ctx.lineTo(7, 6);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = '#757575';
+      ctx.lineWidth = 1;
+      for (const x of [9, 12]) {
+        ctx.beginPath();
+        ctx.moveTo(x, -2);
+        ctx.lineTo(x, 4);
+        ctx.stroke();
+      }
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(1, 5, 3, 4);
+      ctx.fillRect(-3, 5, 3, 4);
+      ctx.fillStyle = '#111';
+      ctx.fillRect(1, -4, 3, 3);
+      ctx.fillStyle = '#5d4037';
+      ctx.fillRect(-10, 9, 4, 3);
+      ctx.fillRect(2, 9, 4, 3);
+    } else if (e.kind === 'shellback') {
+      // Beetle with an armour plate on the side it is heading toward.
+      ctx.scale(scale, scale);
+      const d = { up: -Math.PI / 2, down: Math.PI / 2, left: Math.PI, right: 0 }[e.dir] || 0;
+      ctx.fillStyle = infl ? lerpColor('#26a69a', '#e0f2f1', infl) : '#26a69a';
+      ctx.beginPath();
+      ctx.ellipse(0, 1, 11, 10, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#004d40';
+      ctx.fillRect(-1, -8, 2, 18);
+      ctx.save();
+      ctx.rotate(d);
+      if (!infl) {
+        ctx.fillStyle = '#b0bec5';
+        ctx.beginPath();
+        ctx.arc(2, 0, 13, -1.1, 1.1);
+        ctx.arc(2, 0, 8, 1.1, -1.1, true);
+        ctx.closePath();
+        ctx.fill();
+      }
+      ctx.fillStyle = '#ffeb3b';
+      ctx.fillRect(6, -5, 3, 3);
+      ctx.fillRect(6, 2, 3, 3);
+      ctx.restore();
     } else {
-      // Puffling (and the boss, a crowned giant one).
+      // Puffling, Splitter, its Minis, and the boss (a crowned giant one).
       const squish = e.moving ? 1 + Math.sin(t * 12) * 0.06 : 1;
       ctx.scale(scale * squish, scale / squish);
-      const body = boss ? ['#7e57c2', '#ab47bc', '#26a69a'][e.level - 1] : '#7cb342';
+      const body = boss ? ['#7e57c2', '#ab47bc', '#26a69a'][e.level - 1] : KIND_COLOR[e.kind];
       ctx.fillStyle = infl ? lerpColor(body, '#f1f8e9', infl * 0.8) : body;
       ctx.beginPath();
       ctx.arc(0, 1, 11, Math.PI, 0);
@@ -459,6 +523,17 @@ export class Renderer {
       }
       ctx.closePath();
       ctx.fill();
+      if (e.kind === 'splitter') {
+        // The seam it splits along.
+        ctx.strokeStyle = '#6a1b9a';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([2, 2]);
+        ctx.beginPath();
+        ctx.moveTo(-3 * flip, -10);
+        ctx.lineTo(-3 * flip, 9);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
       ctx.fillStyle = '#fff';
       ctx.beginPath();
       ctx.arc(3 * flip, -2, 5, 0, Math.PI * 2);
@@ -560,7 +635,7 @@ export class Renderer {
     ctx.globalAlpha = 1;
     for (const e of sim.enemies) {
       if (e.state === 'popped' || e.state === 'crushed') continue;
-      ctx.fillStyle = e.kind === 'boss' ? '#ffd54f' : e.kind === 'scorch' ? '#ff7043' : '#9ccc65';
+      ctx.fillStyle = e.kind === 'boss' ? '#ffd54f' : KIND_COLOR[e.kind] || '#9ccc65';
       const r = e.kind === 'boss' ? 4 : 2;
       ctx.fillRect(ox + e.x * s + 1 - r / 2, oy + e.y * s + 1 - r / 2, r, r);
     }

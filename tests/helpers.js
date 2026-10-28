@@ -3,7 +3,8 @@ import { difficulty } from '../src/levelgen.js';
 import { BASE_STATS } from '../src/upgrades.js';
 
 // Build a layout from ASCII: '.' open, '#' dirt, 'X' bedrock,
-// 'P' player, 'p' puffling, 's' scorchling, 'B' boss, 'R' rock, 'g' gold, 'f' fossil.
+// 'P' player, 'p' puffling, 's' scorchling, 'n' gnawler, 'v' splitter, 'k' shellback,
+// 'B' boss, 'R' rock, 'g' gold, 'f' fossil.
 export function layoutFrom(lines, { floor = 1, seed = 1 } = {}) {
   const rows = lines.length;
   const cols = lines[0].length;
@@ -21,6 +22,9 @@ export function layoutFrom(lines, { floor = 1, seed = 1 } = {}) {
       if (ch === 'P') start = { x, y };
       if (ch === 'p') enemies.push({ kind: 'puff', x, y });
       if (ch === 's') enemies.push({ kind: 'scorch', x, y });
+      if (ch === 'n') enemies.push({ kind: 'gnawler', x, y });
+      if (ch === 'v') enemies.push({ kind: 'splitter', x, y });
+      if (ch === 'k') enemies.push({ kind: 'shellback', x, y });
       if (ch === 'B') enemies.push({ kind: 'boss', x, y, level: 1 });
       if (ch === 'R') rocks.push({ x, y });
       if (ch === 'g') items.push({ kind: 'gold', x, y, value: 3 });

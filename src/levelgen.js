@@ -36,6 +36,23 @@ export function difficulty(floor) {
   };
 }
 
+// New foe types join the mix as the run goes deeper.
+export const FOE_INTRO = { gnawler: 4, splitter: 8, shellback: 12 };
+
+export function pickKind(rng, floor, diff) {
+  const weights = [['puff', 1 - diff.scorchRatio], ['scorch', diff.scorchRatio]];
+  for (const [kind, from] of Object.entries(FOE_INTRO)) {
+    if (floor >= from) weights.push([kind, Math.min(0.35, 0.15 + (floor - from) * 0.02)]);
+  }
+  const total = weights.reduce((a, [, w]) => a + w, 0);
+  let r = rng.float(0, total);
+  for (const [kind, w] of weights) {
+    r -= w;
+    if (r < 0) return kind;
+  }
+  return 'puff';
+}
+
 export function bossLevel(floor) {
   const i = BOSS_FLOORS.indexOf(floor);
   return i < 0 ? 0 : i + 1;
@@ -116,7 +133,7 @@ function tryGenerate(floor, seed, fossilLuck) {
     const p = carvePocket(3, 4, 2, ROWS - 2, false);
     if (!p) return null;
     const c = rng.pick(p.cells);
-    const kind = rng.chance(diff.scorchRatio) ? 'scorch' : 'puff';
+    const kind = pickKind(rng, floor, diff);
     enemies.push({ kind, x: c.x, y: c.y });
   }
 
@@ -158,7 +175,7 @@ function tryGenerate(floor, seed, fossilLuck) {
     }
   }
 
-  // Buried treasure: gold nuggets everywhere, a fossil sometimes, deeper is better.
+  // Buried treasure: gold nuggets everywhere, fossils in the deeper half.
   const items = [];
   const placeItem = (kind, minRow, value) => {
     for (let tries = 0; tries < 200; tries++) {
@@ -171,10 +188,9 @@ function tryGenerate(floor, seed, fossilLuck) {
     }
   };
   for (let n = 0; n < diff.nuggets; n++) placeItem('gold', 2, 2 + Math.floor(floor / 5));
-  const fossilChance = Math.min(0.95, 0.5 + floor * 0.015 + fossilLuck * 0.2);
-  if (rng.chance(fossilChance)) placeItem('fossil', Math.floor(ROWS / 2), 1);
-  if (rng.chance(floor / 40 + fossilLuck * 0.1)) placeItem('fossil', Math.floor(ROWS / 2), 1);
-  if (boss) placeItem('fossil', Math.floor(ROWS / 2), 1);
+  // One fossil is guaranteed on every floor; a second turns up about half the time.
+  placeItem('fossil', Math.floor(ROWS / 2), 1);
+  if (rng.chance(Math.min(0.9, 0.45 + floor * 0.01 + fossilLuck * 0.2))) placeItem('fossil', Math.floor(ROWS / 2), 1);
 
   return {
     floor,

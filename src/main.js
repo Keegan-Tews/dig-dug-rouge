@@ -85,6 +85,7 @@ function showHelp() {
         <li><b>Pump:</b> Space (or Z). Hit a foe with the hose, then keep pumping (or hold) until it pops.</li>
         <li><b>Rocks:</b> dig under one and step away. It falls and crushes anything below, including you.</li>
         <li><b>Pufflings</b> wander tunnels and drift through dirt as ghostly eyes. <b>Scorchlings</b> also breathe fire sideways.</li>
+        <li>Deeper down: <b>Gnawlers</b> chew tunnels toward you, <b>Splitters</b> burst into two Minis, and <b>Shellbacks</b> can only be pumped from behind or the side.</li>
         <li>Clear every foe to finish a floor. Pick an upgrade after each one; every 3rd floor has a shop.</li>
         <li>Gold is lost when you die. <b>Fossils</b> you dig up are kept and unlock new upgrades in the Fossil Vault.</li>
         <li><b>P / Esc</b> pause &middot; <b>M</b> mute</li>
