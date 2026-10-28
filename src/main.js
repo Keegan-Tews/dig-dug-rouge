@@ -492,8 +492,8 @@ function frame(now) {
         renderer.handleEvents(events);
         const p = state.sim.player;
         for (const ev of events) {
-          // Spore puffs happen all over the map; only hear the nearby ones.
-          if (ev.type === 'spore' && Math.hypot(ev.x - p.x, ev.y - p.y) > 6) continue;
+          // Vents and lava act all over the map; only hear the nearby ones.
+          if (['spore', 'lava', 'hiss', 'steam'].includes(ev.type) && Math.hypot(ev.x - p.x, ev.y - p.y) > 6) continue;
           sfx.play(ev.type);
           if (ev.type === 'item') queueTip('item', ev.item);
           if (ev.type === 'gear') queueTip('gear', ev.gear);

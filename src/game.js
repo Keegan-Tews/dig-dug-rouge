@@ -1,12 +1,12 @@
 // One floor of play. No DOM access: driven by update(dt, input) so it can be
 // tested headlessly and rendered by render.js.
 
-import { T_OPEN, T_DIRT, T_BEDROCK, T_ICE, T_VINE, DIRS, OPPOSITE, layerFor } from './constants.js';
+import { T_OPEN, T_DIRT, T_BEDROCK, T_ICE, T_VINE, T_LAVA, DIRS, OPPOSITE, layerFor } from './constants.js';
 import { Rng } from './rng.js';
 import { GEAR, GEAR_BY_ID, GEAR_SLOTS, FULL_CHEST_FOSSILS } from './gear.js';
 import { BOMB_FUSE, BOMB_RADIUS, DRILL_TIME, DECOY_TIME, FROST_TIME, FROST_RANGE } from './items.js';
 
-const POP_AT = { puff: 4, scorch: 4, chiller: 4, sporeling: 4, gnawler: 4, splitter: 3, mini: 2, shellback: 4 };
+const POP_AT = { puff: 4, scorch: 4, chiller: 4, sporeling: 4, magmite: 4, gnawler: 4, splitter: 3, mini: 2, shellback: 4 };
 const ICE_DIG = 0.4; // speed multiplier while digging ice
 const ICICLE_FALL = 10;
 const ICICLE_SIGHT = 7; // how far below an icicle the player can be to set it off
@@ -14,6 +14,13 @@ const CHILL_TIME = 1.5; // seconds frozen by frost breath
 const SPORE_SLOW = 0.5; // speed multiplier inside a spore cloud
 const VENT_PUFF = 2.5; // how long a vent's cloud hangs around
 const VINE_REGROW = 6; // seconds an empty vine tunnel takes to close up
+const LAVA_SPREAD = [4, 7]; // seconds between each pool creeping one tile
+const LAVA_REACH = 5; // tiles each pool can creep
+const SEEP_TIME = 1.2; // warning glow before lava fills a tile
+const STEAM_WARN = 0.9;
+const STEAM_BLAST = 1.1;
+const STEAM_HEIGHT = 3; // tiles the blast rises through open tunnel
+const EMBER_TIME = 2.2; // how long a Magmite's burning trail lasts
 const SPEED_MULT = { mini: 1.3, shellback: 0.8, gnawler: 0.9 };
 const BOSS_POP_AT = [0, 10, 14, 18];
 const HOSE_EXTEND = 16; // tiles per second
@@ -59,6 +66,10 @@ export class FloorSim {
     this.vineHome = [];
     for (let i = 0; i < this.grid.length; i++) if (this.grid[i] === T_VINE) this.vineHome.push(i);
     this.vineTimers = new Map();
+    this.pools = (layout.lava || []).map((l) => ({ tiles: [{ x: l.x, y: l.y }], left: LAVA_REACH, timer: this.rng.float(...LAVA_SPREAD) }));
+    this.seeps = [];
+    this.steam = (layout.steam || []).map((s) => ({ x: s.x, y: s.y, state: 'idle', timer: this.rng.float(2, 5) }));
+    this.embers = [];
     this.items = layout.items.map((it) => ({ ...it, taken: false }));
 
     // Usable items carried in the pack, and their effects in play.
@@ -111,6 +122,8 @@ export class FloorSim {
       // Sporelings and the Fungal Grotto boss leave spore clouds instead.
       spores: e.kind === 'sporeling' || (boss && this.zone === 'fungal'),
       sporeTimer: this.rng.float(2, 5),
+      // Magmites and the Magma Layer boss leave burning trails.
+      trail: e.kind === 'magmite' || (boss && this.zone === 'magma'),
     };
   }
 
@@ -148,7 +161,7 @@ export class FloorSim {
   }
 
   canDig(x, y) {
-    return this.inBounds(x, y) && this.tile(x, y) !== T_BEDROCK && !this.rockAt(x, y);
+    return this.inBounds(x, y) && this.tile(x, y) !== T_BEDROCK && this.tile(x, y) !== T_LAVA && !this.rockAt(x, y);
   }
 
   // ---- main update ----
@@ -175,6 +188,7 @@ export class FloorSim {
     this.updateIcicles(dt);
     this.updateSpores(dt);
     this.updateVines(dt);
+    this.updateMagma(dt);
     this.updateEnemies(dt);
     this.updateCorpses(dt);
     this.checkContacts();
@@ -735,6 +749,12 @@ export class FloorSim {
     const p = this.player;
     // Fire breathers take a breath when the player is level with them.
     const breathes = e.kind === 'scorch' || e.kind === 'chiller' || (e.kind === 'boss' && e.level >= 2 && !e.spores);
+    // Burning trail: each tile it leaves smoulders for a moment.
+    if (e.trail && !e.moving && (e.lastX !== e.x || e.lastY !== e.y)) {
+      if (e.lastX !== undefined && Math.abs(e.lastX - e.x) + Math.abs(e.lastY - e.y) === 1) this.embers.push({ x: e.lastX, y: e.lastY, time: EMBER_TIME });
+      e.lastX = e.x;
+      e.lastY = e.y;
+    }
     if (breathes) e.fireCooldown -= dt;
     if (breathes && !e.moving) {
       const sameRow = Math.abs(p.y - e.y) < 0.5;
@@ -868,7 +888,7 @@ export class FloorSim {
 
   // The zone's own breath-type foe, used for boss minions.
   breather() {
-    return this.zone === 'frozen' ? 'chiller' : this.zone === 'fungal' ? 'sporeling' : 'scorch';
+    return { frozen: 'chiller', fungal: 'sporeling', magma: 'magmite' }[this.zone] || 'scorch';
   }
 
   // ---- spores and vines ----
@@ -935,6 +955,100 @@ export class FloorSim {
         this.vineTimers.set(i, t);
       }
     }
+  }
+
+  // ---- magma ----
+
+  lavaAt(x, y) {
+    return this.inBounds(x, y) && this.tile(x, y) === T_LAVA;
+  }
+
+  updateMagma(dt) {
+    const p = this.player;
+    // Lava pools creep into open tunnel, down first, never up.
+    for (const pool of this.pools) {
+      if (pool.left <= 0) continue;
+      pool.timer -= dt;
+      if (pool.timer > 0) continue;
+      pool.timer = this.rng.float(...LAVA_SPREAD);
+      const free = (x, y) => this.isOpen(x, y) && y > 0 && !this.seeps.some((s) => s.x === x && s.y === y)
+        && !this.enemies.some((e) => Math.round(e.x) === x && Math.round(e.y) === y && e.state !== 'ghost');
+      let next = null;
+      for (const t of pool.tiles) {
+        if (free(t.x, t.y + 1)) { next = { x: t.x, y: t.y + 1 }; break; }
+      }
+      if (!next) {
+        const side = this.rng.shuffle(pool.tiles.flatMap((t) => [{ x: t.x - 1, y: t.y }, { x: t.x + 1, y: t.y }]));
+        next = side.find((c) => free(c.x, c.y)) || null;
+      }
+      if (!next) {
+        pool.left = 0;
+        continue;
+      }
+      pool.left -= 1;
+      this.seeps.push({ x: next.x, y: next.y, timer: SEEP_TIME, pool });
+    }
+    for (const s of this.seeps) {
+      s.timer -= dt;
+      if (s.timer <= 0) {
+        if (this.isOpen(s.x, s.y)) {
+          this.grid[s.y * this.cols + s.x] = T_LAVA;
+          s.pool.tiles.push({ x: s.x, y: s.y });
+          this.emit('lava', { x: s.x, y: s.y });
+        }
+      }
+    }
+    this.seeps = this.seeps.filter((s) => s.timer > 0);
+
+    // Steam vents: idle, hiss as a warning, then blast straight up.
+    for (const v of this.steam) {
+      v.timer -= dt;
+      if (v.timer > 0) continue;
+      if (v.state === 'idle') {
+        v.state = 'warn';
+        v.timer = STEAM_WARN;
+        this.emit('hiss', { x: v.x, y: v.y });
+      } else if (v.state === 'warn') {
+        v.state = 'blast';
+        v.timer = STEAM_BLAST;
+        this.emit('steam', { x: v.x, y: v.y });
+      } else {
+        v.state = 'idle';
+        v.timer = this.rng.float(3, 5.5);
+      }
+    }
+    for (const v of this.steam) {
+      if (v.state !== 'blast') continue;
+      const top = this.steamTop(v);
+      const inColumn = (x, y) => Math.abs(x - v.x) < 0.6 && y > top - 0.5 && y < v.y + 0.5;
+      for (const e of this.enemies) {
+        if (e.kind === 'boss' || e.state === 'popped' || e.state === 'crushed' || e.state === 'ghost' || !inColumn(e.x, e.y)) continue;
+        this.pop(e); // steam pops foes outright
+      }
+      if (p.alive && inColumn(p.x, p.y)) this.hurtPlayer('steam');
+    }
+
+    for (const em of this.embers) em.time -= dt;
+    this.embers = this.embers.filter((em) => em.time > 0);
+
+    if (!p.alive) return;
+    if (this.lavaAt(Math.round(p.x), Math.round(p.y))) {
+      p.invuln = 0;
+      p.hearts = 1; // lava is always fatal, like rocks
+      p.shield = 0;
+      this.hurtPlayer('lava');
+      return;
+    }
+    if (!this.stats.fireproof && this.embers.some((em) => Math.abs(em.x - p.x) < 0.6 && Math.abs(em.y - p.y) < 0.6)) {
+      this.hurtPlayer('fire');
+    }
+  }
+
+  // Highest tile a vent's blast reaches through open tunnel.
+  steamTop(v) {
+    let top = v.y;
+    while (top > v.y - STEAM_HEIGHT && this.isOpen(v.x, top - 1)) top -= 1;
+    return top;
   }
 
   // ---- icicles ----

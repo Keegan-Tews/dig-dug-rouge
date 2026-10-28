@@ -73,7 +73,7 @@ export const UPGRADES = [
   },
   {
     id: 'ash_coat', name: 'Ash Coat', icon: '🧥', max: 1, locked: true,
-    desc: 'Fire breath can no longer hurt you.',
+    desc: 'Fire breath and burning trails can no longer hurt you.',
     apply: (s) => { s.fireproof = true; },
   },
   {

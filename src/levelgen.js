@@ -7,7 +7,7 @@
 
 import { Rng } from './rng.js';
 import { ITEMS } from './items.js';
-import { T_OPEN, T_DIRT, T_BEDROCK, T_ICE, T_VINE, BOSS_FLOORS, actFor, zoneFor } from './constants.js';
+import { T_OPEN, T_DIRT, T_BEDROCK, T_ICE, T_VINE, T_LAVA, BOSS_FLOORS, actFor, zoneFor } from './constants.js';
 
 const MAP_SIZES = { 1: { cols: 19, rows: 24 }, 2: { cols: 23, rows: 30 }, 3: { cols: 27, rows: 36 } };
 const BASE_AREA = 15 * 18; // the original single-screen field
@@ -24,6 +24,7 @@ export function difficulty(floor, zoneId = zoneFor(floor).id) {
   const act = actFor(floor).num;
   const frozen = zoneId === 'frozen';
   const fungal = zoneId === 'fungal';
+  const magma = zoneId === 'magma';
   const { cols, rows } = mapSize(floor);
   const area = (cols * rows) / BASE_AREA;
   return {
@@ -40,6 +41,8 @@ export function difficulty(floor, zoneId = zoneFor(floor).id) {
     vineBlobs: fungal ? Math.round(6 * area) : 0,
     vents: fungal ? Math.round(3 * area) : 0,
     glows: fungal ? Math.round(10 * area) : 0,
+    lava: magma ? Math.round(1.5 * area) : 0,
+    steam: magma ? Math.round(2 * area) : 0,
     nuggets: Math.round((3 + Math.min(4, Math.floor(floor / 4))) * area),
     zone: zoneId,
   };
@@ -48,7 +51,7 @@ export function difficulty(floor, zoneId = zoneFor(floor).id) {
 // New foe types join the mix as the run goes deeper.
 export const FOE_INTRO = { gnawler: 4, splitter: 8, shellback: 12 };
 
-export const BREATHER = { frozen: 'chiller', fungal: 'sporeling' };
+export const BREATHER = { frozen: 'chiller', fungal: 'sporeling', magma: 'magmite' };
 
 export function pickKind(rng, floor, diff) {
   // Some zones swap the fire breathers for their own foe.
@@ -204,6 +207,23 @@ function tryGenerate(floor, seed, fossilLuck, zone) {
     taken.add(key(s.x, s.y));
   }
 
+  // Magma Layer: lava pools that creep along tunnels, and steam vents.
+  // Both stay well clear of the start and of enemies.
+  const lava = [];
+  const steam = [];
+  if (diff.lava || diff.steam) {
+    const spots = rng.shuffle(ventSpots.filter((c) => !taken.has(key(c.x, c.y)) && Math.abs(c.x - START.x) + Math.abs(c.y - START.y) > 8));
+    for (const s of spots.splice(0, diff.lava)) {
+      lava.push(s);
+      grid[idx(s.x, s.y)] = T_LAVA;
+      taken.add(key(s.x, s.y));
+    }
+    for (const s of spots.splice(0, diff.steam)) {
+      steam.push(s);
+      taken.add(key(s.x, s.y));
+    }
+  }
+
   // Icicles hang from the ceiling of open tunnels.
   const icicles = [];
   const spots = [];
@@ -289,6 +309,8 @@ function tryGenerate(floor, seed, fossilLuck, zone) {
     icicles,
     vents,
     glows,
+    lava,
+    steam,
     zone,
     items,
     boss,

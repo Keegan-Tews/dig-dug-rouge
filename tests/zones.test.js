@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { FloorSim } from '../src/game.js';
 import { generateFloor } from '../src/levelgen.js';
-import { T_ICE, T_OPEN, T_VINE } from '../src/constants.js';
+import { T_ICE, T_OPEN, T_VINE, T_LAVA } from '../src/constants.js';
 import { newRun, screensAfterFloor, routeOptions, chooseRoute, runZone } from '../src/run.js';
 import { defaultMeta } from '../src/meta.js';
 import { layoutFrom, stats, run } from './helpers.js';
@@ -10,7 +10,7 @@ import { layoutFrom, stats, run } from './helpers.js';
 test('the path splits after the Act I boss', () => {
   assert.deepEqual(screensAfterFloor(7), ['reward', 'route']);
   assert.ok(!screensAfterFloor(6).includes('route'));
-  assert.ok(!screensAfterFloor(14).includes('route'));
+  assert.deepEqual(screensAfterFloor(14), ['reward', 'route'], 'and again after the Act II boss');
   const r = newRun(1, defaultMeta());
   r.floor = 7;
   assert.deepEqual(routeOptions(r), ['bedrock', 'frozen', 'fungal']);
@@ -196,4 +196,100 @@ test('sporelings leave spore clouds and Old Rootmaw spores instead of breathing 
   const boss = new FloorSim(generateFloor(14, 5, { zone: 'fungal' }), stats()).boss;
   assert.equal(boss.spores, true);
   assert.equal(boss.frost, false);
+});
+
+test('the path splits again for Act III: The Deep or the Magma Layer', () => {
+  const r = newRun(1, defaultMeta());
+  r.floor = 14;
+  assert.deepEqual(routeOptions(r), ['deep', 'magma']);
+  assert.ok(chooseRoute(r, 'magma'));
+  assert.equal(runZone(r, 15).id, 'magma');
+  assert.equal(runZone(r, 20).id, 'magma');
+});
+
+test('magma floors have lava, steam vents and magmites', () => {
+  let lava = 0;
+  let steam = 0;
+  const kinds = new Set();
+  for (let seed = 0; seed < 8; seed++) {
+    const l = generateFloor(17, seed, { zone: 'magma' });
+    lava += Array.from(l.grid).filter((t) => t === T_LAVA).length;
+    steam += l.steam.length;
+    for (const e of l.enemies) kinds.add(e.kind);
+    for (const s of [...l.lava, ...l.steam]) assert.ok(Math.abs(s.x - l.start.x) + Math.abs(s.y - l.start.y) > 8);
+  }
+  assert.ok(lava > 0);
+  assert.ok(steam > 0);
+  assert.ok(kinds.has('magmite'));
+  assert.ok(!kinds.has('scorch'));
+});
+
+test('lava creeps down and along tunnels, with a warning first', () => {
+  const sim = new FloorSim(layoutFrom([
+    '##########',
+    '#L.....###',
+    '#.########',
+    '#.#######P',
+    '#########p',
+  ], { zone: 'magma' }), stats());
+  sim.freeze = 99;
+  sim.pools[0].timer = 0;
+  sim.update(1 / 120, {});
+  assert.deepEqual(sim.seeps.map((s) => [s.x, s.y]), [[1, 2]], 'down first');
+  assert.equal(sim.tile(1, 2), T_OPEN, 'not yet');
+  run(sim, 1.3);
+  assert.equal(sim.tile(1, 2), T_LAVA);
+  sim.pools[0].timer = 0;
+  run(sim, 1.3);
+  assert.equal(sim.tile(1, 3), T_LAVA);
+  sim.pools[0].timer = 0;
+  run(sim, 1.3);
+  assert.equal(sim.tile(2, 1), T_LAVA, 'then sideways once it cannot fall');
+});
+
+test('lava is fatal and the player cannot walk into it', () => {
+  const sim = new FloorSim(layoutFrom(['..........', 'PL........', '#########p'], { zone: 'magma' }), stats(), { hearts: 3 });
+  sim.freeze = 99;
+  run(sim, 1, { dir: 'right' });
+  assert.equal(sim.player.x, 0, 'blocked');
+  sim.grid[1 * sim.cols + 0] = T_LAVA;
+  run(sim, 0.1);
+  assert.equal(sim.player.alive, false);
+});
+
+test('steam vents warn, then blast upward, popping foes and hurting the player', () => {
+  const sim = new FloorSim(layoutFrom([
+    '#.#.###',
+    '#.#p###',
+    '#P#.###',
+    '#T#T##p',
+  ], { zone: 'magma' }), stats(), { hearts: 2 });
+  sim.freeze = 99; // keep foes still; vents still run
+  for (const v of sim.steam) v.timer = 0.01;
+  run(sim, 0.05);
+  assert.ok(sim.steam.every((v) => v.state === 'warn'));
+  assert.equal(sim.kills, 0);
+  run(sim, 1);
+  assert.ok(sim.steam.every((v) => v.state === 'blast'));
+  assert.equal(sim.kills, 1, 'the foe in the column popped');
+  assert.ok(sim.gold > 0);
+  assert.equal(sim.player.hearts, 1, 'the player was scalded');
+});
+
+test('magmites leave a burning trail that Ash Coat ignores', () => {
+  const lines = ['..........', 'P....M....', '#########p'];
+  const sim = new FloorSim(layoutFrom(lines, { zone: 'magma' }), stats());
+  sim.enemies[0].ghostTimer = 99;
+  run(sim, 1.5);
+  assert.ok(sim.embers.length > 0);
+
+  const coat = new FloorSim(layoutFrom(['..........', 'P.........', '#########p'], { zone: 'magma' }), stats({ fireproof: true }));
+  coat.embers.push({ x: 0, y: 1, time: 5 });
+  run(coat, 0.2);
+  assert.equal(coat.player.alive, true);
+  const bare = new FloorSim(layoutFrom(['..........', 'P.........', '#########p'], { zone: 'magma' }), stats());
+  bare.embers.push({ x: 0, y: 1, time: 5 });
+  run(bare, 0.2);
+  assert.equal(bare.player.alive, false);
+  assert.equal(new FloorSim(generateFloor(20, 2, { zone: 'magma' }), stats()).boss.trail, true);
 });
