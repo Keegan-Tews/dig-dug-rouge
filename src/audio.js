@@ -16,6 +16,8 @@ const SOUNDS = {
   chill: { type: 'sine', f: [1600, 400], d: 0.4, v: 0.08 },
   crack: { type: 'square', f: [2000, 1800], d: 0.06, v: 0.05 },
   shatter: { type: 'triangle', f: [2400, 600], d: 0.25, v: 0.08 },
+  spore: { type: 'sine', f: [300, 180], d: 0.3, v: 0.04 },
+  spored: { type: 'triangle', f: [500, 250], d: 0.25, v: 0.06 },
   gear: { type: 'triangle', f: [392, 1175], d: 0.35, v: 0.09 },
   item: { type: 'square', f: [523, 784], d: 0.15, v: 0.07 },
   boom: { type: 'sawtooth', f: [180, 30], d: 0.5, v: 0.16 },

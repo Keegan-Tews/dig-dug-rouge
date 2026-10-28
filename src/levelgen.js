@@ -7,7 +7,7 @@
 
 import { Rng } from './rng.js';
 import { ITEMS } from './items.js';
-import { T_OPEN, T_DIRT, T_BEDROCK, T_ICE, BOSS_FLOORS, actFor, zoneFor } from './constants.js';
+import { T_OPEN, T_DIRT, T_BEDROCK, T_ICE, T_VINE, BOSS_FLOORS, actFor, zoneFor } from './constants.js';
 
 const MAP_SIZES = { 1: { cols: 19, rows: 24 }, 2: { cols: 23, rows: 30 }, 3: { cols: 27, rows: 36 } };
 const BASE_AREA = 15 * 18; // the original single-screen field
@@ -23,6 +23,7 @@ export function startFor(cols) {
 export function difficulty(floor, zoneId = zoneFor(floor).id) {
   const act = actFor(floor).num;
   const frozen = zoneId === 'frozen';
+  const fungal = zoneId === 'fungal';
   const { cols, rows } = mapSize(floor);
   const area = (cols * rows) / BASE_AREA;
   return {
@@ -33,9 +34,12 @@ export function difficulty(floor, zoneId = zoneFor(floor).id) {
     ghostDelay: [Math.max(4, 11 - floor * 0.35), Math.max(7, 17 - floor * 0.45)],
     chase: Math.min(0.75, 0.3 + floor * 0.025),
     rockCount: Math.round((floor <= 2 ? 3 : 4) * area),
-    bedrockBlobs: Math.round((act === 1 ? 0 : frozen ? 1 : act === 2 ? 3 : 4) * area),
+    bedrockBlobs: Math.round((act === 1 ? 0 : frozen || fungal ? 1 : act === 2 ? 3 : 4) * area),
     iceBlobs: frozen ? Math.round(7 * area) : 0,
     icicles: frozen ? Math.round(3 * area) : 0,
+    vineBlobs: fungal ? Math.round(6 * area) : 0,
+    vents: fungal ? Math.round(3 * area) : 0,
+    glows: fungal ? Math.round(10 * area) : 0,
     nuggets: Math.round((3 + Math.min(4, Math.floor(floor / 4))) * area),
     zone: zoneId,
   };
@@ -44,9 +48,11 @@ export function difficulty(floor, zoneId = zoneFor(floor).id) {
 // New foe types join the mix as the run goes deeper.
 export const FOE_INTRO = { gnawler: 4, splitter: 8, shellback: 12 };
 
+export const BREATHER = { frozen: 'chiller', fungal: 'sporeling' };
+
 export function pickKind(rng, floor, diff) {
-  // In the Frozen Caverns, Chillers take the place of fire breathers.
-  const breather = diff.zone === 'frozen' ? 'chiller' : 'scorch';
+  // Some zones swap the fire breathers for their own foe.
+  const breather = BREATHER[diff.zone] || 'scorch';
   const weights = [['puff', 1 - diff.scorchRatio], [breather, diff.scorchRatio]];
   for (const [kind, from] of Object.entries(FOE_INTRO)) {
     if (floor >= from) weights.push([kind, Math.min(0.35, 0.15 + (floor - from) * 0.02)]);
@@ -175,8 +181,28 @@ function tryGenerate(floor, seed, fossilLuck, zone) {
     }
   }
 
+  // Vine thickets (Fungal Grotto): quick to dig, but they grow back.
+  for (let b = 0; b < diff.vineBlobs; b++) {
+    const w = rng.int(2, 4);
+    const h = rng.int(2, 3);
+    const x0 = rng.int(0, COLS - w);
+    const y0 = rng.int(2, ROWS - 1 - h);
+    for (let y = y0; y < y0 + h; y++) for (let x = x0; x < x0 + w; x++) {
+      if (grid[idx(x, y)] === T_DIRT && !reserved[idx(x, y)]) grid[idx(x, y)] = T_VINE;
+    }
+  }
+
   const taken = new Set();
   const key = (x, y) => `${x},${y}`;
+  for (const e of enemies) taken.add(key(e.x, e.y));
+
+  // Spore vents sit in open tunnels away from the start.
+  const vents = [];
+  const ventSpots = pockets.flatMap((p) => p.cells).filter((c) => !taken.has(key(c.x, c.y)) && Math.abs(c.x - START.x) + Math.abs(c.y - START.y) > 6);
+  for (const s of rng.shuffle(ventSpots).slice(0, diff.vents)) {
+    vents.push(s);
+    taken.add(key(s.x, s.y));
+  }
 
   // Icicles hang from the ceiling of open tunnels.
   const icicles = [];
@@ -207,6 +233,18 @@ function tryGenerate(floor, seed, fossilLuck, zone) {
       if (taken.has(key(x, y)) || taken.has(key(x, y + 1)) || taken.has(key(x, y - 1))) continue;
       rocks.push({ x, y });
       taken.add(key(x, y));
+      break;
+    }
+  }
+
+  // Glowing mushrooms light up patches of the dark.
+  const glows = [];
+  for (let n = 0; n < diff.glows; n++) {
+    for (let tries = 0; tries < 50; tries++) {
+      const x = rng.int(0, COLS - 1);
+      const y = rng.int(2, ROWS - 1);
+      if (grid[idx(x, y)] === T_OPEN || grid[idx(x, y)] === T_BEDROCK || taken.has(key(x, y))) continue;
+      glows.push({ x, y });
       break;
     }
   }
@@ -249,6 +287,8 @@ function tryGenerate(floor, seed, fossilLuck, zone) {
     enemies,
     rocks,
     icicles,
+    vents,
+    glows,
     zone,
     items,
     boss,

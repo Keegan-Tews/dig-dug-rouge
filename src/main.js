@@ -490,7 +490,10 @@ function frame(now) {
         state.sim.update(STEP, input.sample());
         const events = state.sim.drainEvents();
         renderer.handleEvents(events);
+        const p = state.sim.player;
         for (const ev of events) {
+          // Spore puffs happen all over the map; only hear the nearby ones.
+          if (ev.type === 'spore' && Math.hypot(ev.x - p.x, ev.y - p.y) > 6) continue;
           sfx.play(ev.type);
           if (ev.type === 'item') queueTip('item', ev.item);
           if (ev.type === 'gear') queueTip('gear', ev.gear);
