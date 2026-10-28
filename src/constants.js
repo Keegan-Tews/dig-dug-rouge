@@ -10,6 +10,7 @@ export const T_OPEN = 0;
 export const T_DIRT = 1;
 export const T_BEDROCK = 2;
 export const T_ICE = 3;
+export const T_VINE = 4;
 
 export const TOTAL_FLOORS = 20;
 export const BOSS_FLOORS = [7, 14, 20];
@@ -46,10 +47,14 @@ export const ZONES = {
     id: 'frozen', name: 'Frozen Caverns', act: 2, boss: 'The Rime Queen',
     desc: 'Ice that is slow to dig, icicles that drop on anything below, and Chillers whose frost breath freezes you in place.',
   },
+  fungal: {
+    id: 'fungal', name: 'Fungal Grotto', act: 2, boss: 'Old Rootmaw',
+    desc: 'Pitch dark except for glowing mushrooms. Spore clouds slow you down, and vines grow back over the tunnels you dig.',
+  },
   deep: { id: 'deep', name: 'The Deep', act: 3, boss: 'The Deep King' },
 };
 
-export const ROUTES = { 2: ['bedrock', 'frozen'] };
+export const ROUTES = { 2: ['bedrock', 'frozen', 'fungal'] };
 const DEFAULT_ZONE = { 1: 'topsoil', 2: 'bedrock', 3: 'deep' };
 
 export function zoneFor(floor, route = {}) {

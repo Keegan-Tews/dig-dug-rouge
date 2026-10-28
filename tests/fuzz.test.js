@@ -9,7 +9,7 @@ test('random play on every floor never crashes or produces NaN positions', () =>
   const dirs = [null, 'up', 'down', 'left', 'right'];
   for (let floor = 1; floor <= 20; floor++) {
     for (let seed = 0; seed < 3; seed++) {
-      const zone = floor >= 8 && floor <= 14 && seed === 1 ? 'frozen' : undefined;
+      const zone = floor >= 8 && floor <= 14 && seed > 0 ? ['frozen', 'fungal'][seed - 1] : undefined;
       const sim = new FloorSim(generateFloor(floor, seed * 31 + floor, { zone }), { ...BASE_STATS, shield: 2, itemSlots: 4 }, { hearts: 5, items: ['bomb', 'decoy', 'frost', 'drill'] });
       const rng = new Rng(seed + floor * 100);
       let input = {};

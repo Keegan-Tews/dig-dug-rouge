@@ -1,16 +1,19 @@
 // One floor of play. No DOM access: driven by update(dt, input) so it can be
 // tested headlessly and rendered by render.js.
 
-import { T_OPEN, T_DIRT, T_BEDROCK, T_ICE, DIRS, OPPOSITE, layerFor } from './constants.js';
+import { T_OPEN, T_DIRT, T_BEDROCK, T_ICE, T_VINE, DIRS, OPPOSITE, layerFor } from './constants.js';
 import { Rng } from './rng.js';
 import { GEAR, GEAR_BY_ID, GEAR_SLOTS, FULL_CHEST_FOSSILS } from './gear.js';
 import { BOMB_FUSE, BOMB_RADIUS, DRILL_TIME, DECOY_TIME, FROST_TIME, FROST_RANGE } from './items.js';
 
-const POP_AT = { puff: 4, scorch: 4, chiller: 4, gnawler: 4, splitter: 3, mini: 2, shellback: 4 };
+const POP_AT = { puff: 4, scorch: 4, chiller: 4, sporeling: 4, gnawler: 4, splitter: 3, mini: 2, shellback: 4 };
 const ICE_DIG = 0.4; // speed multiplier while digging ice
 const ICICLE_FALL = 10;
 const ICICLE_SIGHT = 7; // how far below an icicle the player can be to set it off
 const CHILL_TIME = 1.5; // seconds frozen by frost breath
+const SPORE_SLOW = 0.5; // speed multiplier inside a spore cloud
+const VENT_PUFF = 2.5; // how long a vent's cloud hangs around
+const VINE_REGROW = 6; // seconds an empty vine tunnel takes to close up
 const SPEED_MULT = { mini: 1.3, shellback: 0.8, gnawler: 0.9 };
 const BOSS_POP_AT = [0, 10, 14, 18];
 const HOSE_EXTEND = 16; // tiles per second
@@ -49,6 +52,13 @@ export class FloorSim {
     this.enemies = layout.enemies.map((e, i) => this.makeEnemy(e, i));
     this.rocks = layout.rocks.map((r) => ({ x: r.x, y: r.y, fy: r.y, state: 'idle', timer: 0, kills: 0 }));
     this.icicles = (layout.icicles || []).map((i) => ({ x: i.x, y: i.y, fy: i.y, state: 'idle', timer: 0 }));
+    this.vents = (layout.vents || []).map((v) => ({ x: v.x, y: v.y, timer: this.rng.float(1, 4), on: 0 }));
+    this.glows = layout.glows || [];
+    this.clouds = [];
+    // Tiles that started as vines grow back once left alone.
+    this.vineHome = [];
+    for (let i = 0; i < this.grid.length; i++) if (this.grid[i] === T_VINE) this.vineHome.push(i);
+    this.vineTimers = new Map();
     this.items = layout.items.map((it) => ({ ...it, taken: false }));
 
     // Usable items carried in the pack, and their effects in play.
@@ -98,6 +108,9 @@ export class FloorSim {
       digging: false,
       // Chillers and the Frozen Caverns boss breathe frost instead of fire.
       frost: e.kind === 'chiller' || (boss && this.zone === 'frozen'),
+      // Sporelings and the Fungal Grotto boss leave spore clouds instead.
+      spores: e.kind === 'sporeling' || (boss && this.zone === 'fungal'),
+      sporeTimer: this.rng.float(2, 5),
     };
   }
 
@@ -160,6 +173,8 @@ export class FloorSim {
     this.updateHose(dt, input);
     this.updateRocks(dt);
     this.updateIcicles(dt);
+    this.updateSpores(dt);
+    this.updateVines(dt);
     this.updateEnemies(dt);
     this.updateCorpses(dt);
     this.checkContacts();
@@ -205,8 +220,10 @@ export class FloorSim {
 
     p.walking = true;
     const drill = this.drillTime > 0;
-    const digMult = p.digging && !drill ? this.stats.digPenalty * (p.digging === 'ice' ? ICE_DIG : 1) : 1;
-    const speed = this.stats.speed * (drill ? 1.5 : 1) * digMult;
+    // Vines are soft: no digging slowdown.
+    const digMult = p.digging && p.digging !== 'vine' && !drill ? this.stats.digPenalty * (p.digging === 'ice' ? ICE_DIG : 1) : 1;
+    const slow = this.inSpores(p.x, p.y) ? SPORE_SLOW : 1;
+    const speed = this.stats.speed * (drill ? 1.5 : 1) * digMult * slow;
     const remaining = Math.abs(p.tx - p.x) + Math.abs(p.ty - p.y);
     const step = speed * dt;
     if (step >= remaining) {
@@ -232,7 +249,7 @@ export class FloorSim {
     const ny = p.y + dy;
     if (!this.canDig(nx, ny)) return false;
     const t = this.tile(nx, ny);
-    p.digging = t === T_DIRT ? 'dirt' : t === T_ICE ? 'ice' : false;
+    p.digging = t === T_DIRT ? 'dirt' : t === T_ICE ? 'ice' : t === T_VINE ? 'vine' : false;
     if (p.digging) {
       this.grid[ny * this.cols + nx] = T_OPEN;
       this.emit('dig', { x: nx, y: ny });
@@ -332,7 +349,7 @@ export class FloorSim {
       for (let x = b.x - r; x <= b.x + r; x++) {
         if (y < 1 || !this.inBounds(x, y) || dist(x, y, b.x, b.y) > BOMB_RADIUS) continue;
         const t = this.tile(x, y);
-        if (t === T_DIRT || t === T_ICE) this.grid[y * this.cols + x] = T_OPEN;
+        if (t === T_DIRT || t === T_ICE || t === T_VINE) this.grid[y * this.cols + x] = T_OPEN;
         const rock = this.rockAt(x, y);
         if (rock) {
           rock.state = 'breaking';
@@ -690,7 +707,7 @@ export class FloorSim {
           e.spawnTimer = 8 - e.level;
           if (minions < 2 + e.level) {
             const m = this.makeEnemy(
-              { kind: e.level >= 2 && this.rng.chance(0.5) ? 'scorch' : 'puff', x: Math.round(e.x), y: Math.round(e.y), state: 'ghost', ghostTime: 0 },
+              { kind: e.level >= 2 && this.rng.chance(0.5) ? this.breather() : 'puff', x: Math.round(e.x), y: Math.round(e.y), state: 'ghost', ghostTime: 0 },
               this.nextId++,
             );
             spawned.push(m);
@@ -717,7 +734,7 @@ export class FloorSim {
   enemyWalk(e, dt) {
     const p = this.player;
     // Fire breathers take a breath when the player is level with them.
-    const breathes = e.kind === 'scorch' || e.kind === 'chiller' || (e.kind === 'boss' && e.level >= 2);
+    const breathes = e.kind === 'scorch' || e.kind === 'chiller' || (e.kind === 'boss' && e.level >= 2 && !e.spores);
     if (breathes) e.fireCooldown -= dt;
     if (breathes && !e.moving) {
       const sameRow = Math.abs(p.y - e.y) < 0.5;
@@ -771,7 +788,7 @@ export class FloorSim {
       e.ty = e.y + dy;
       e.moving = true;
       const t = this.tile(e.tx, e.ty);
-      e.digging = t === T_DIRT ? 'dirt' : t === T_ICE ? 'ice' : false;
+      e.digging = t === T_DIRT || t === T_VINE ? 'dirt' : t === T_ICE ? 'ice' : false;
       if (e.digging) this.grid[e.ty * this.cols + e.tx] = T_OPEN;
     }
 
@@ -846,6 +863,77 @@ export class FloorSim {
     const y = Math.round(span.y);
     for (let x = Math.ceil(span.x0 - 0.5); x <= Math.floor(span.x1 + 0.5); x++) {
       if (this.inBounds(x, y) && this.tile(x, y) === T_ICE) this.grid[y * this.cols + x] = T_OPEN;
+    }
+  }
+
+  // The zone's own breath-type foe, used for boss minions.
+  breather() {
+    return this.zone === 'frozen' ? 'chiller' : this.zone === 'fungal' ? 'sporeling' : 'scorch';
+  }
+
+  // ---- spores and vines ----
+
+  inSpores(x, y) {
+    return this.clouds.some((c) => dist(c.x, c.y, x, y) < c.r);
+  }
+
+  addCloud(x, y, r, time) {
+    this.clouds.push({ x: Math.round(x), y: Math.round(y), r, time, life: time });
+    this.emit('spore', { x: Math.round(x), y: Math.round(y) });
+  }
+
+  updateSpores(dt) {
+    for (const c of this.clouds) c.time -= dt;
+    this.clouds = this.clouds.filter((c) => c.time > 0);
+    for (const v of this.vents) {
+      if (v.on > 0) {
+        v.on -= dt;
+        continue;
+      }
+      v.timer -= dt;
+      if (v.timer <= 0) {
+        v.on = VENT_PUFF;
+        v.timer = this.rng.float(3, 6);
+        this.addCloud(v.x, v.y, 1.5, VENT_PUFF);
+      }
+    }
+    if (this.freeze <= 0) {
+      for (const e of this.enemies) {
+        if (!e.spores || e.frozen > 0 || e.state !== 'walk') continue;
+        e.sporeTimer -= dt;
+        if (e.sporeTimer <= 0) {
+          e.sporeTimer = e.kind === 'boss' ? 3.5 : this.rng.float(4, 7);
+          this.addCloud(e.x, e.y, e.kind === 'boss' ? 1.8 : 1.2, 3);
+        }
+      }
+    }
+    const p = this.player;
+    const slowed = p.alive && this.inSpores(p.x, p.y);
+    if (slowed && !p.slowed) this.emit('spored', { x: p.x, y: p.y });
+    p.slowed = slowed;
+  }
+
+  updateVines(dt) {
+    if (!this.vineHome.length) return;
+    const p = this.player;
+    for (const i of this.vineHome) {
+      if (this.grid[i] !== T_OPEN) continue;
+      const x = i % this.cols;
+      const y = (i - x) / this.cols;
+      const near = (ox, oy, r) => Math.abs(ox - x) < r && Math.abs(oy - y) < r;
+      const busy = near(p.x, p.y, 1.5) || near(p.tx, p.ty, 1.5)
+        || this.enemies.some((e) => near(e.x, e.y, 1.2) || near(e.tx, e.ty, 1.2))
+        || this.rocks.some((r) => near(r.x, r.state === 'falling' ? r.fy : r.y, 0.9))
+        || this.bombs.some((b) => near(b.x, b.y, 1))
+        || (this.decoy && near(this.decoy.x, this.decoy.y, 1));
+      const t = busy ? 0 : (this.vineTimers.get(i) || 0) + dt;
+      if (t >= VINE_REGROW) {
+        this.grid[i] = T_VINE;
+        this.vineTimers.delete(i);
+        this.emit('vine', { x, y });
+      } else {
+        this.vineTimers.set(i, t);
+      }
     }
   }
 

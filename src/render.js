@@ -2,7 +2,7 @@
 
 import { ITEM_BY_ID, BOMB_FUSE } from './items.js';
 import { GEAR_BY_ID } from './gear.js';
-import { TILE, HUD_H, VIEW_COLS, VIEW_ROWS, T_DIRT, T_BEDROCK, T_ICE, layerFor, actFor, TOTAL_FLOORS } from './constants.js';
+import { TILE, HUD_H, VIEW_COLS, VIEW_ROWS, T_DIRT, T_BEDROCK, T_ICE, T_VINE, layerFor, actFor, TOTAL_FLOORS } from './constants.js';
 
 const DIRT = [
   null,
@@ -12,10 +12,11 @@ const DIRT = [
   ['#5d3a6e', '#472b56'],
 ];
 const DIRT_FROZEN = [null, ['#dfe9f0', '#c5d6e2'], ['#b9cfdf', '#a1bcd0'], ['#8fb0c9', '#7a9cb7'], ['#6987a6', '#56738f']];
+const DIRT_FUNGAL = [null, ['#3f4a3a', '#34402f'], ['#3a3d4c', '#2f3240'], ['#3a3050', '#2e2642'], ['#2b2340', '#211b33']];
 const DIRT_ACT3 = [null, ['#6b5b8a', '#584a74'], ['#4f4a7d', '#3f3b66'], ['#3d3a66', '#302d52'], ['#2a2847', '#201e38']];
 const TUNNEL = '#120d16';
 const KIND_COLOR = {
-  puff: '#7cb342', scorch: '#ff7043', chiller: '#4fc3f7', gnawler: '#8d6e63', splitter: '#ba68c8', mini: '#f48fb1', shellback: '#26a69a',
+  puff: '#7cb342', scorch: '#ff7043', chiller: '#4fc3f7', sporeling: '#ce93d8', gnawler: '#8d6e63', splitter: '#ba68c8', mini: '#f48fb1', shellback: '#26a69a',
 };
 
 export class Renderer {
@@ -106,6 +107,10 @@ export class Renderer {
         this.burst(ev.x, ev.y, '#b3e5fc', 24);
       } else if (ev.type === 'chill') {
         this.addPopup(ev.x, ev.y, 'FROZEN!', '#81d4fa');
+      } else if (ev.type === 'spored') {
+        this.addPopup(ev.x, ev.y, 'SLOWED', '#ce93d8');
+      } else if (ev.type === 'spore') {
+        this.burst(ev.x, ev.y, '#ce93d8', 6);
       } else if (ev.type === 'shatter') {
         this.burst(ev.x, ev.y + 0.4, '#e1f5fe', 10);
       } else if (ev.type === 'clang') {
@@ -165,11 +170,16 @@ export class Renderer {
     this.drawItems(sim, t);
     for (const r of sim.rocks) this.drawRock(r, t);
     for (const ic of sim.icicles) this.drawIcicle(ic, t);
+    if (sim.zone === 'fungal') this.drawFungus(sim, t);
     for (const e of sim.enemies) this.drawFire(sim, e, t);
     this.drawGadgets(sim, t);
     this.drawHose(sim);
     for (const e of sim.enemies) this.drawEnemy(e, t);
     this.drawPlayer(sim.player, t, sim);
+    if (sim.zone === 'fungal') {
+      this.drawDark(sim, t);
+      this.drawClouds(sim, t);
+    }
     this.drawFx();
     ctx.restore();
 
@@ -224,7 +234,7 @@ export class Renderer {
 
   drawGrid(sim, run) {
     const ctx = this.ctx;
-    const palette = sim.zone === 'frozen' ? DIRT_FROZEN : actFor(run.floor).num === 3 ? DIRT_ACT3 : DIRT;
+    const palette = sim.zone === 'frozen' ? DIRT_FROZEN : sim.zone === 'fungal' ? DIRT_FUNGAL : actFor(run.floor).num === 3 ? DIRT_ACT3 : DIRT;
     // Sky / surface row.
     const sky = ctx.createLinearGradient(0, 0, 0, TILE);
     sky.addColorStop(0, '#203a5c');
@@ -263,6 +273,22 @@ export class Renderer {
           ctx.lineTo(px + 24, py + 16);
           ctx.lineTo(px + 20, py + 26);
           ctx.stroke();
+        } else if (tile === T_VINE) {
+          // A tangle of vines over dark dirt.
+          ctx.fillStyle = c2;
+          ctx.fillRect(px, py, TILE, TILE);
+          ctx.strokeStyle = '#558b2f';
+          ctx.lineWidth = 3;
+          const h = (x * 31 + y * 17) % 4;
+          ctx.beginPath();
+          ctx.moveTo(px, py + 8 + h * 2);
+          ctx.quadraticCurveTo(px + 16, py + 26 - h * 3, px + TILE, py + 10 + h);
+          ctx.moveTo(px + 6 + h, py);
+          ctx.quadraticCurveTo(px + 22, py + 14, px + 12 - h, py + TILE);
+          ctx.stroke();
+          ctx.fillStyle = '#8bc34a';
+          ctx.fillRect(px + 9 + h * 3, py + 12, 5, 4);
+          ctx.fillRect(px + 20 - h, py + 22, 5, 4);
         } else if (tile === T_BEDROCK) {
           ctx.fillStyle = '#4a4a55';
           ctx.fillRect(px, py, TILE, TILE);
@@ -446,6 +472,113 @@ export class Renderer {
     ctx.fill();
   }
 
+  // Glowing mushrooms, spore vents and the spore clouds themselves.
+  drawFungus(sim, t) {
+    const ctx = this.ctx;
+    const shroom = (cx, by, s, cap) => {
+      ctx.fillStyle = '#e0e0d0';
+      ctx.fillRect(cx - 1.5 * s, by - 5 * s, 3 * s, 5 * s);
+      ctx.fillStyle = cap;
+      ctx.beginPath();
+      ctx.ellipse(cx, by - 5 * s, 5 * s, 3.5 * s, 0, Math.PI, 0);
+      ctx.fill();
+    };
+    for (const g of sim.glows) {
+      const cx = g.x * TILE + TILE / 2;
+      const by = g.y * TILE + TILE - 6;
+      shroom(cx - 6, by, 1, '#4dd0e1');
+      shroom(cx + 5, by + 2, 0.7, '#80deea');
+    }
+    for (const v of sim.vents) {
+      const cx = v.x * TILE + TILE / 2;
+      const by = v.y * TILE + TILE - 4;
+      // Swells just before it puffs.
+      const swell = v.on <= 0 && v.timer < 0.6 ? 1 + Math.sin(t * 40) * 0.08 : 1;
+      shroom(cx, by, 1.6 * swell, '#ab47bc');
+      ctx.fillStyle = '#f3e5f5';
+      ctx.fillRect(cx - 4, by - 10, 2, 2);
+      ctx.fillRect(cx + 3, by - 9, 2, 2);
+    }
+  }
+
+  // Spore clouds glow faintly, so they show even in the dark.
+  drawClouds(sim, t) {
+    const ctx = this.ctx;
+    for (const c of sim.clouds) {
+      const cx = c.x * TILE + TILE / 2;
+      const cy = c.y * TILE + TILE / 2;
+      const fade = Math.min(1, c.time / 0.6, (c.life - c.time) / 0.3);
+      ctx.fillStyle = `rgba(186,104,200,${0.32 * fade})`;
+      for (let i = 0; i < 6; i++) {
+        const a = i * 1.05 + t * 0.6;
+        const r = c.r * TILE * (0.45 + 0.1 * Math.sin(t * 2 + i));
+        ctx.beginPath();
+        ctx.arc(cx + Math.cos(a) * r * 0.7, cy + Math.sin(a) * r * 0.5, r * 0.75, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  }
+
+  // The Fungal Grotto is dark: only light sources cut through.
+  lightsFor(sim, t) {
+    const p = sim.player;
+    const lights = [{ x: p.x, y: p.y, r: 3.6 }];
+    for (const g of sim.glows) lights.push({ x: g.x, y: g.y, r: 1.6 });
+    for (const v of sim.vents) lights.push({ x: v.x, y: v.y, r: v.on > 0 ? 2.6 : 1.8 + Math.sin(t * 2 + v.x) * 0.15 });
+    for (const e of sim.enemies) {
+      const span = sim.fireSpan(e);
+      if (span) lights.push({ x: (span.x0 + span.x1) / 2, y: span.y, r: 2.2 });
+    }
+    for (const b of sim.bombs) lights.push({ x: b.x, y: b.y, r: 1.2 });
+    return lights;
+  }
+
+  isLit(sim, x, y) {
+    return (this.lights || []).some((l) => Math.hypot(l.x - x, l.y - y) < l.r * 0.8);
+  }
+
+  drawDark(sim, t) {
+    if (!this.dark) {
+      this.dark = document.createElement('canvas');
+      this.dark.width = this.viewW;
+      this.dark.height = this.viewH;
+    }
+    const d = this.dark.getContext('2d');
+    const ox = Math.round(this.cam.x);
+    const oy = Math.round(this.cam.y);
+    d.globalCompositeOperation = 'source-over';
+    d.clearRect(0, 0, this.viewW, this.viewH);
+    d.fillStyle = 'rgba(4,2,10,0.96)';
+    d.fillRect(0, 0, this.viewW, this.viewH);
+    d.globalCompositeOperation = 'destination-out';
+    this.lights = this.lightsFor(sim, t);
+    for (const l of this.lights) {
+      const x = l.x * TILE + TILE / 2 - ox;
+      const y = l.y * TILE + TILE / 2 - oy;
+      const r = l.r * TILE;
+      if (x < -r || y < -r || x > this.viewW + r || y > this.viewH + r) continue;
+      const g = d.createRadialGradient(x, y, r * 0.2, x, y, r);
+      g.addColorStop(0, 'rgba(0,0,0,1)');
+      g.addColorStop(0.6, 'rgba(0,0,0,0.75)');
+      g.addColorStop(1, 'rgba(0,0,0,0)');
+      d.fillStyle = g;
+      d.fillRect(x - r, y - r, r * 2, r * 2);
+    }
+    this.ctx.drawImage(this.dark, ox, oy);
+    // Foes out in the dark still give themselves away: their eyes glint.
+    const ctx = this.ctx;
+    for (const e of sim.enemies) {
+      if (e.state === 'popped' || e.state === 'crushed' || this.isLit(sim, e.x, e.y)) continue;
+      if (Math.sin(t * 1.7 + e.id * 2.3) < -0.6) continue; // a slow blink
+      const cx = e.x * TILE + TILE / 2;
+      const cy = e.y * TILE + TILE / 2 - 2;
+      ctx.fillStyle = e.kind === 'boss' ? '#ffd54f' : '#fff59d';
+      const s = e.kind === 'boss' ? 3 : 2;
+      ctx.fillRect(cx - 4 - s / 2, cy, s, s);
+      ctx.fillRect(cx + 3 - s / 2, cy, s, s);
+    }
+  }
+
   drawFire(sim, e, t) {
     const span = sim.fireSpan(e);
     if (!span) return;
@@ -551,6 +684,29 @@ export class Renderer {
       ctx.fillStyle = pal.feet;
       ctx.fillRect(-8, 8 + bob, 3, 3);
       ctx.fillRect(4, 8 + bob, 3, 3);
+    } else if (e.kind === 'sporeling') {
+      // A walking mushroom with a spotted cap.
+      const bob = e.moving ? Math.abs(Math.sin(t * 12)) * 2 : 0;
+      ctx.scale(flip * scale, scale);
+      ctx.fillStyle = infl ? lerpColor('#efe6d8', '#ffffff', infl) : '#efe6d8';
+      roundRect(ctx, -6, -2 - bob, 12, 13, 4);
+      ctx.fillStyle = infl ? lerpColor('#8e24aa', '#f3e5f5', infl * 0.7) : '#8e24aa';
+      ctx.beginPath();
+      ctx.ellipse(0, -3 - bob, 13, 9, 0, Math.PI, 0);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = '#f3e5f5';
+      ctx.beginPath();
+      ctx.arc(-6, -7 - bob, 2.2, 0, Math.PI * 2);
+      ctx.arc(2, -9 - bob, 2.6, 0, Math.PI * 2);
+      ctx.arc(8, -5 - bob, 1.8, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#111';
+      ctx.fillRect(0, 1 - bob, 2, 3);
+      ctx.fillRect(4, 1 - bob, 2, 3);
+      ctx.fillStyle = '#5d4037';
+      ctx.fillRect(-5, 10, 4, 2);
+      ctx.fillRect(2, 10, 4, 2);
     } else if (e.kind === 'gnawler') {
       // Mole-like chewer with a drill snout; it shudders while digging.
       const shake = e.digging ? Math.sin(t * 50) * 1 : 0;
@@ -611,7 +767,7 @@ export class Renderer {
       // Puffling, Splitter, its Minis, and the boss (a crowned giant one).
       const squish = e.moving ? 1 + Math.sin(t * 12) * 0.06 : 1;
       ctx.scale(scale * squish, scale / squish);
-      const body = boss ? (e.frost ? '#81d4fa' : ['#7e57c2', '#ab47bc', '#26a69a'][e.level - 1]) : KIND_COLOR[e.kind];
+      const body = boss ? (e.frost ? '#81d4fa' : e.spores ? '#9c27b0' : ['#7e57c2', '#ab47bc', '#26a69a'][e.level - 1]) : KIND_COLOR[e.kind];
       ctx.fillStyle = infl ? lerpColor(body, '#f1f8e9', infl * 0.8) : body;
       ctx.beginPath();
       ctx.arc(0, 1, 11, Math.PI, 0);
@@ -836,13 +992,15 @@ export class Renderer {
     for (let y = 0; y < sim.rows; y++) {
       for (let x = 0; x < sim.cols; x++) {
         const t = sim.tile(x, y);
-        ctx.fillStyle = t === 0 ? '#1d1626' : t === T_BEDROCK ? '#5f5f6e' : t === T_ICE ? '#a7d8f0' : sim.zone === 'frozen' ? '#8fb0c9' : '#6d4c41';
+        ctx.fillStyle = t === 0 ? '#1d1626' : t === T_BEDROCK ? '#5f5f6e' : t === T_ICE ? '#a7d8f0' : t === T_VINE ? '#4e7d3a' : sim.zone === 'frozen' ? '#8fb0c9' : sim.zone === 'fungal' ? '#3a3050' : '#6d4c41';
         ctx.fillRect(ox + x * s, oy + y * s, s, s);
       }
     }
     ctx.globalAlpha = 1;
     for (const e of sim.enemies) {
       if (e.state === 'popped' || e.state === 'crushed') continue;
+      // In the dark, only foes you can see show up.
+      if (sim.zone === 'fungal' && e.kind !== 'boss' && !this.isLit(sim, e.x, e.y)) continue;
       ctx.fillStyle = e.kind === 'boss' ? '#ffd54f' : KIND_COLOR[e.kind] || '#9ccc65';
       const r = e.kind === 'boss' ? 4 : 2;
       ctx.fillRect(ox + e.x * s + 1 - r / 2, oy + e.y * s + 1 - r / 2, r, r);
