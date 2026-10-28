@@ -8,6 +8,7 @@ export const PERKS = [
   { id: 'perm_lungs', name: 'Deep Breath', icon: '🫁', costs: [3, 6, 10], desc: 'Inflated foes deflate 15% slower per level.', apply: (s, n) => { s.deflateDelay *= 1 + 0.15 * n; } },
   { id: 'perm_hose', name: 'Longer Hose', icon: '➰', costs: [5, 12], desc: '+1 hose reach per level.', apply: (s, n) => { s.hoseRange += n; } },
   { id: 'perm_hat', name: 'Lucky Hat', icon: '⛑️', costs: [15], desc: 'Block one extra hit on every floor.', apply: (s, n) => { s.shield += n; } },
+  { id: 'perm_pack', name: 'Deep Pockets', icon: '🎒', costs: [8], desc: 'Carry one more usable item in every run.', apply: (s, n) => { s.itemSlots += n; } },
   { id: 'perm_heart', name: 'Thick Skin', icon: '❤️', costs: [12, 25], desc: 'Start every run with one more heart per level.', hearts: 1 },
 ];
 

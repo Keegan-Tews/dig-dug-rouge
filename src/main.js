@@ -8,6 +8,7 @@ import { Renderer } from './render.js';
 import { Input } from './input.js';
 import { Sfx } from './audio.js';
 import { UPGRADE_BY_ID } from './upgrades.js';
+import { ITEM_BY_ID } from './items.js';
 import { CLASSES, CLASS_BY_ID, classUnlocked } from './classes.js';
 import {
   UNLOCKS, PERKS, loadMeta, saveMeta, buyUnlock, buyPerk, perkLevel, perkCost, recordRunEnd,
@@ -83,6 +84,7 @@ function showHelp() {
       <ul class="help">
         <li><b>Move / dig:</b> arrow keys or WASD</li>
         <li><b>Pump:</b> Space (or Z). Hit a foe with the hose, then keep pumping (or hold) until it pops.</li>
+        <li><b>Items:</b> E uses the selected item, Q switches between them. Find them in buried 📦 caches or buy them in the shop: 💣 Bomb, 🌀 Turbo Drill, 🧸 Squeaky Decoy and ❄️ Frost Flask.</li>
         <li><b>Rocks:</b> dig under one and step away. It falls and crushes anything below, including you.</li>
         <li><b>Pufflings</b> wander tunnels and drift through dirt as ghostly eyes. <b>Scorchlings</b> also breathe fire sideways.</li>
         <li>Deeper down: <b>Gnawlers</b> chew tunnels toward you, <b>Splitters</b> burst into two Minis, and <b>Shellbacks</b> can only be pumped from behind or the side.</li>
@@ -166,7 +168,7 @@ function startFloor() {
   const run = state.run;
   const stats = runStats(run);
   const layout = generateFloor(run.floor, floorSeed(run), { fossilLuck: stats.fossilLuck });
-  state.sim = new FloorSim(layout, stats, { hearts: run.hearts });
+  state.sim = new FloorSim(layout, stats, { hearts: run.hearts, items: run.items });
   renderer.updateCamera(state.sim, 0, true);
   renderer.popups = [];
   renderer.particles = [];
@@ -235,10 +237,18 @@ function showShop(fresh = true) {
   }
   const items = state.shop
     .map((it, i) => {
-      const can = !it.sold && run.gold >= it.price && !(it.kind === 'heal' && run.hearts >= MAX_HEARTS);
-      const body = it.kind === 'heal'
-        ? `<div class="card-head"><b>❤️ Patch Up</b><span>${run.hearts}/${MAX_HEARTS}</span></div><p>Gain one heart.</p>`
-        : upgradeCard(it.id);
+      const slots = runStats(run).itemSlots;
+      const full = (it.kind === 'heal' && run.hearts >= MAX_HEARTS) || (it.kind === 'item' && run.items.length >= slots);
+      const can = !it.sold && run.gold >= it.price && !full;
+      let body;
+      if (it.kind === 'heal') {
+        body = `<div class="card-head"><b>❤️ Patch Up</b><span>${run.hearts}/${MAX_HEARTS}</span></div><p>Gain one heart.</p>`;
+      } else if (it.kind === 'item') {
+        const item = ITEM_BY_ID[it.id];
+        body = `<div class="card-head"><b>${item.icon} ${item.name}</b><span>Pack ${run.items.length}/${slots}</span></div><p>${item.desc}</p>`;
+      } else {
+        body = upgradeCard(it.id);
+      }
       return `<div class="card ${it.sold ? 'owned' : ''}">${body}
         <button data-action="buy" data-index="${i}" ${can ? '' : 'disabled'}>${it.sold ? 'Sold' : `Buy ${it.price}g`}</button></div>`;
     })
@@ -247,12 +257,17 @@ function showShop(fresh = true) {
     <div class="panel">
       <h2>Mole Market</h2>
       <p class="small">You have <b>${run.gold}g</b>. Gold is lost if you die, so spend it.</p>
+      <p class="small dim">Pack: ${packText(run)}</p>
       <div class="cards">${items}</div>
       <div class="buttons">
         <button data-action="reroll" ${run.gold >= REROLL_PRICE ? '' : 'disabled'}>Reroll (${REROLL_PRICE}g)</button>
         <button data-action="continue">Descend</button>
       </div>
     </div>`);
+}
+
+function packText(run) {
+  return run.items.map((id) => `${ITEM_BY_ID[id].icon} ${ITEM_BY_ID[id].name}`).join(', ') || 'empty';
 }
 
 function showEnd(won) {

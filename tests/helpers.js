@@ -4,7 +4,7 @@ import { BASE_STATS } from '../src/upgrades.js';
 
 // Build a layout from ASCII: '.' open, '#' dirt, 'X' bedrock,
 // 'P' player, 'p' puffling, 's' scorchling, 'n' gnawler, 'v' splitter, 'k' shellback,
-// 'B' boss, 'R' rock, 'g' gold, 'f' fossil.
+// 'B' boss, 'R' rock, 'g' gold, 'f' fossil, 'c' item cache (a bomb).
 export function layoutFrom(lines, { floor = 1, seed = 1 } = {}) {
   const rows = lines.length;
   const cols = lines[0].length;
@@ -16,7 +16,7 @@ export function layoutFrom(lines, { floor = 1, seed = 1 } = {}) {
   lines.forEach((line, y) => {
     [...line].forEach((ch, x) => {
       let t = T_OPEN;
-      if (ch === '#' || ch === 'R' || ch === 'g' || ch === 'f') t = T_DIRT;
+      if (ch === '#' || ch === 'R' || ch === 'g' || ch === 'f' || ch === 'c') t = T_DIRT;
       if (ch === 'X') t = T_BEDROCK;
       grid[y * cols + x] = t;
       if (ch === 'P') start = { x, y };
@@ -28,6 +28,7 @@ export function layoutFrom(lines, { floor = 1, seed = 1 } = {}) {
       if (ch === 'B') enemies.push({ kind: 'boss', x, y, level: 1 });
       if (ch === 'R') rocks.push({ x, y });
       if (ch === 'g') items.push({ kind: 'gold', x, y, value: 3 });
+      if (ch === 'c') items.push({ kind: 'cache', x, y, value: 1, item: 'bomb' });
       if (ch === 'f') items.push({ kind: 'fossil', x, y, value: 1 });
     });
   });

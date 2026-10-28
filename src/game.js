@@ -3,6 +3,7 @@
 
 import { T_OPEN, T_DIRT, T_BEDROCK, DIRS, OPPOSITE, layerFor } from './constants.js';
 import { Rng } from './rng.js';
+import { BOMB_FUSE, BOMB_RADIUS, DRILL_TIME, DECOY_TIME, FROST_TIME, FROST_RANGE } from './items.js';
 
 const POP_AT = { puff: 4, scorch: 4, gnawler: 4, splitter: 3, mini: 2, shellback: 4 };
 const SPEED_MULT = { mini: 1.3, shellback: 0.8, gnawler: 0.9 };
@@ -41,6 +42,14 @@ export class FloorSim {
     this.enemies = layout.enemies.map((e, i) => this.makeEnemy(e, i));
     this.rocks = layout.rocks.map((r) => ({ x: r.x, y: r.y, fy: r.y, state: 'idle', timer: 0, kills: 0 }));
     this.items = layout.items.map((it) => ({ ...it, taken: false }));
+
+    // Usable items carried in the pack, and their effects in play.
+    this.slots = stats.itemSlots ?? 2;
+    this.pack = (opts.items || []).slice(0, this.slots);
+    this.selected = 0;
+    this.bombs = [];
+    this.decoy = null;
+    this.drillTime = 0;
 
     this.time = 0;
     this.freeze = stats.tremor || 0;
@@ -135,6 +144,7 @@ export class FloorSim {
     if (this.player.invuln > 0) this.player.invuln -= dt;
 
     this.updatePlayer(dt, input);
+    this.updateItems(dt, input);
     this.updateHose(dt, input);
     this.updateRocks(dt);
     this.updateEnemies(dt);
@@ -176,7 +186,8 @@ export class FloorSim {
     if (!want) return;
 
     p.walking = true;
-    const speed = this.stats.speed * (p.digging ? this.stats.digPenalty : 1);
+    const drill = this.drillTime > 0;
+    const speed = this.stats.speed * (drill ? 1.5 : 1) * (p.digging && !drill ? this.stats.digPenalty : 1);
     const remaining = Math.abs(p.tx - p.x) + Math.abs(p.ty - p.y);
     const step = speed * dt;
     if (step >= remaining) {
@@ -220,11 +231,105 @@ export class FloorSim {
         const g = Math.round(it.value * this.stats.goldMult);
         this.gold += g;
         this.emit('gold', { x, y, amount: g });
+      } else if (it.kind === 'cache') {
+        if (this.pack.length < this.slots) {
+          this.pack.push(it.item);
+          this.emit('item', { x, y, item: it.item });
+        } else {
+          // Pack full: the cache is sold for scrap.
+          const g = Math.round(5 * this.stats.goldMult);
+          this.gold += g;
+          this.emit('gold', { x, y, amount: g });
+        }
       } else {
         this.fossils += it.value;
         this.emit('fossil', { x, y });
       }
     }
+  }
+
+  // ---- items ----
+
+  updateItems(dt, input) {
+    if (input.cyclePressed && this.pack.length > 1) {
+      this.selected = (this.selected + 1) % this.pack.length;
+      this.emit('cycle');
+    }
+    if (this.selected >= this.pack.length) this.selected = 0;
+    if (input.usePressed && this.pack.length && this.player.alive) {
+      const [id] = this.pack.splice(this.selected, 1);
+      this.useItem(id);
+      if (this.selected >= this.pack.length) this.selected = 0;
+    }
+
+    if (this.drillTime > 0) this.drillTime -= dt;
+    if (this.decoy) {
+      this.decoy.time -= dt;
+      if (this.decoy.time <= 0) this.decoy = null;
+    }
+    for (const b of this.bombs) {
+      b.fuse -= dt;
+      if (b.fuse <= 0) this.explode(b);
+    }
+    this.bombs = this.bombs.filter((b) => b.fuse > 0);
+  }
+
+  useItem(id) {
+    const p = this.player;
+    const x = Math.round(p.x);
+    const y = Math.round(p.y);
+    if (id === 'bomb') this.bombs.push({ x, y, fuse: BOMB_FUSE });
+    else if (id === 'drill') this.drillTime = DRILL_TIME;
+    else if (id === 'decoy') this.decoy = { x, y, time: DECOY_TIME };
+    else if (id === 'frost') {
+      for (const e of this.enemies) {
+        if (e.state === 'popped' || e.state === 'crushed' || dist(e.x, e.y, p.x, p.y) > FROST_RANGE) continue;
+        e.frozen = FROST_TIME;
+        if (e.state === 'fire' || e.state === 'charge') {
+          e.state = 'walk';
+          e.fireLen = 0;
+        }
+      }
+    }
+    this.emit('use', { item: id, x, y });
+  }
+
+  explode(b) {
+    const r = Math.ceil(BOMB_RADIUS);
+    for (let y = b.y - r; y <= b.y + r; y++) {
+      for (let x = b.x - r; x <= b.x + r; x++) {
+        if (y < 1 || !this.inBounds(x, y) || dist(x, y, b.x, b.y) > BOMB_RADIUS) continue;
+        if (this.tile(x, y) === T_DIRT) this.grid[y * this.cols + x] = T_OPEN;
+        const rock = this.rockAt(x, y);
+        if (rock) {
+          rock.state = 'breaking';
+          rock.timer = 0.4;
+        }
+      }
+    }
+    for (const e of this.enemies) {
+      if (e.state === 'popped' || e.state === 'crushed') continue;
+      if (dist(e.x, e.y, b.x, b.y) > BOMB_RADIUS + (e.kind === 'boss' ? 0.5 : 0)) continue;
+      if (e.kind === 'boss') {
+        // Bosses take a big chunk of inflation instead of dying outright.
+        e.state = 'inflated';
+        e.prevState = 'ghost';
+        e.inflation += 4;
+        e.deflateTimer = this.stats.deflateDelay * 1.5;
+        if (e.inflation >= this.popThreshold(e)) this.pop(e);
+      } else {
+        e.inflation = e.popAt;
+        this.pop(e, { noSplit: true });
+      }
+    }
+    const p = this.player;
+    if (p.alive && dist(p.x, p.y, b.x, b.y) <= BOMB_RADIUS) this.hurtPlayer('bomb');
+    this.emit('boom', { x: b.x, y: b.y });
+  }
+
+  // Where foes are drawn to: a live decoy, else the player.
+  target() {
+    return this.decoy || this.player;
   }
 
   hurtPlayer(cause) {
@@ -357,7 +462,8 @@ export class FloorSim {
     return e.kind === 'shellback' && (e.state === 'walk' || e.state === 'charge') && hoseDir === OPPOSITE[e.dir];
   }
 
-  pop(e) {
+  pop(e, opts = {}) {
+    if (this.hose && this.hose.target === e) this.hose = null;
     e.state = 'popped';
     e.timer = 0.35;
     this.hose = null;
@@ -365,7 +471,7 @@ export class FloorSim {
     this.gold += g;
     this.kills += 1;
     this.emit('pop', { x: e.x, y: e.y, amount: g, kind: e.kind });
-    if (e.kind === 'splitter') this.split(e);
+    if (e.kind === 'splitter' && !opts.noSplit) this.split(e);
     if (e.kind === 'boss') {
       for (const o of this.enemies) {
         if (o !== e && o.state !== 'popped' && o.state !== 'crushed') {
@@ -488,6 +594,10 @@ export class FloorSim {
     if (this.freeze > 0) return;
     const spawned = [];
     for (const e of this.enemies) {
+      if (e.frozen > 0) {
+        e.frozen -= dt;
+        continue;
+      }
       switch (e.state) {
         case 'walk':
           this.enemyWalk(e, dt);
@@ -576,9 +686,10 @@ export class FloorSim {
       }
     }
 
+    const goal = this.target();
     e.ghostTimer -= dt;
     // On big maps only foes within range come hunting through the dirt.
-    if (!e.moving && e.ghostTimer <= 0 && dist(e.x, e.y, p.x, p.y) > GHOST_RANGE) e.ghostTimer = 2;
+    if (!e.moving && e.ghostTimer <= 0 && dist(e.x, e.y, goal.x, goal.y) > GHOST_RANGE) e.ghostTimer = 2;
     if (!e.moving && e.ghostTimer <= 0) {
       e.state = 'ghost';
       e.ghostTime = 0;
@@ -588,7 +699,7 @@ export class FloorSim {
 
     if (!e.moving) {
       // Gnawlers within range chew straight through dirt toward the player.
-      const chewing = e.kind === 'gnawler' && dist(e.x, e.y, p.x, p.y) <= GHOST_RANGE;
+      const chewing = e.kind === 'gnawler' && dist(e.x, e.y, goal.x, goal.y) <= GHOST_RANGE;
       const options = Object.keys(DIRS).filter((d) => {
         const [dx, dy] = DIRS[d];
         const nx = e.x + dx;
@@ -603,7 +714,7 @@ export class FloorSim {
       if (this.rng.chance(chewing ? 0.85 : this.diff.chase)) {
         dir = choices.reduce((best, d) => {
           const [dx, dy] = DIRS[d];
-          const score = dist(e.x + dx, e.y + dy, p.x, p.y);
+          const score = dist(e.x + dx, e.y + dy, goal.x, goal.y);
           return !best || score < best.score ? { d, score } : best;
         }, null).d;
       } else {
@@ -642,7 +753,7 @@ export class FloorSim {
   }
 
   enemyGhost(e, dt) {
-    const p = this.player;
+    const p = this.target();
     e.ghostTime += dt;
     const dx = p.x - e.x;
     const dy = p.y - e.y;
@@ -695,6 +806,7 @@ export class FloorSim {
     const p = this.player;
     if (!p.alive) return;
     for (const e of this.enemies) {
+      if (e.frozen > 0) continue;
       if (e.state === 'walk' || e.state === 'ghost' || e.state === 'charge' || e.state === 'fire') {
         if (dist(e.x, e.y, p.x, p.y) < e.radius) {
           this.hurtPlayer(e.kind);

@@ -7,12 +7,16 @@ const KEY_DIRS = {
   ArrowRight: 'right', KeyD: 'right',
 };
 const PUMP_KEYS = new Set(['Space', 'KeyZ', 'KeyJ', 'KeyX']);
+const USE_KEYS = new Set(['KeyE', 'KeyK', 'KeyC']);
+const CYCLE_KEYS = new Set(['KeyQ']);
 
 export class Input {
   constructor(target = window) {
     this.held = []; // direction stack, newest last
     this.pumpDown = false;
     this.pumpEdge = false;
+    this.useEdge = false;
+    this.cycleEdge = false;
     this.listeners = new Set();
     target.addEventListener('keydown', (e) => this.onKey(e, true));
     target.addEventListener('keyup', (e) => this.onKey(e, false));
@@ -29,6 +33,14 @@ export class Input {
     if (PUMP_KEYS.has(e.code)) {
       e.preventDefault();
       this.setPump(down, e.repeat);
+      return;
+    }
+    if (USE_KEYS.has(e.code) || CYCLE_KEYS.has(e.code)) {
+      e.preventDefault();
+      if (down && !e.repeat) {
+        if (USE_KEYS.has(e.code)) this.useEdge = true;
+        else this.cycleEdge = true;
+      }
       return;
     }
     if (down && !e.repeat) for (const fn of this.listeners) fn(e.code, e);
@@ -55,8 +67,12 @@ export class Input {
       dir: this.held.length ? this.held[this.held.length - 1] : null,
       pumpPressed: this.pumpEdge,
       pumpHeld: this.pumpDown,
+      usePressed: this.useEdge,
+      cyclePressed: this.cycleEdge,
     };
     this.pumpEdge = false;
+    this.useEdge = false;
+    this.cycleEdge = false;
     return s;
   }
 
@@ -64,6 +80,8 @@ export class Input {
     this.held = [];
     this.pumpDown = false;
     this.pumpEdge = false;
+    this.useEdge = false;
+    this.cycleEdge = false;
   }
 
   bindTouch(root) {
@@ -76,6 +94,10 @@ export class Input {
       el.addEventListener('pointerleave', off);
       el.addEventListener('pointercancel', off);
     }
+    const use = root.querySelector('[data-use]');
+    if (use) use.addEventListener('pointerdown', (e) => { e.preventDefault(); this.useEdge = true; });
+    const cycle = root.querySelector('[data-cycle]');
+    if (cycle) cycle.addEventListener('pointerdown', (e) => { e.preventDefault(); this.cycleEdge = true; });
     const pump = root.querySelector('[data-pump]');
     if (pump) {
       pump.addEventListener('pointerdown', (e) => { e.preventDefault(); this.setPump(true); });

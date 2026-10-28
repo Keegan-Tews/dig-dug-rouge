@@ -162,4 +162,7 @@ button.ghost { background: transparent; color: var(--dim); border: 1px solid var
   .dpad [data-dir='down'] { grid-column: 2; grid-row: 3; }
   .dpad button, .pump { touch-action: none; user-select: none; }
   .pump { width: 96px; height: 96px; border-radius: 50%; font-size: 12px; }
+  .side { display: flex; align-items: center; gap: 10px; }
+  .itembtns { display: flex; flex-direction: column; gap: 8px; }
+  .itembtns button { touch-action: none; user-select: none; padding: 10px 8px; }
 }

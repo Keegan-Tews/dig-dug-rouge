@@ -14,6 +14,7 @@ export const BASE_STATS = {
   shield: 0, // hits blocked per floor, recharged each floor
   digPenalty: 0.8, // speed multiplier while digging through dirt
   popDiscount: 0, // pumps fewer needed to pop a foe
+  itemSlots: 2, // usable items the pack can hold
 };
 
 // `locked` upgrades only enter the pool once bought in the Fossil Vault.
@@ -52,6 +53,11 @@ export const UPGRADES = [
     id: 'bellows', name: 'Bellows', icon: '💨', max: 2,
     desc: 'Holding pump works 35% faster.',
     apply: (s) => { s.autoPumpInterval *= 0.65; },
+  },
+  {
+    id: 'big_pack', name: 'Big Pack', icon: '🎒', max: 1,
+    desc: 'Carry one more usable item.',
+    apply: (s) => { s.itemSlots += 1; },
   },
   {
     id: 'hard_hat', name: 'Hard Hat', icon: '⛑️', max: 2,
