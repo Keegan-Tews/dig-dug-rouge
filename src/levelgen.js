@@ -6,6 +6,7 @@
 // Maps grow with each act and are bigger than the screen, which scrolls.
 
 import { Rng } from './rng.js';
+import { ITEMS } from './items.js';
 import { T_OPEN, T_DIRT, T_BEDROCK, BOSS_FLOORS, actFor } from './constants.js';
 
 const MAP_SIZES = { 1: { cols: 19, rows: 24 }, 2: { cols: 23, rows: 30 }, 3: { cols: 27, rows: 36 } };
@@ -188,6 +189,17 @@ function tryGenerate(floor, seed, fossilLuck) {
     }
   };
   for (let n = 0; n < diff.nuggets; n++) placeItem('gold', 2, 2 + Math.floor(floor / 5));
+  // Item caches: one per floor, sometimes two.
+  const caches = 1 + (rng.chance(0.3) ? 1 : 0);
+  for (let n = 0; n < caches; n++) {
+    const before = items.length;
+    placeItem('cache', 2, 1);
+    if (items.length > before) items[items.length - 1].item = rng.pick(ITEMS).id;
+  }
+
+  // A gear chest near the bottom of every floor; the sim decides what is inside.
+  placeItem('chest', ROWS - 6, 1);
+
   // One fossil is guaranteed on every floor; a second turns up about half the time.
   placeItem('fossil', Math.floor(ROWS / 2), 1);
   if (rng.chance(Math.min(0.9, 0.45 + floor * 0.01 + fossilLuck * 0.2))) placeItem('fossil', Math.floor(ROWS / 2), 1);

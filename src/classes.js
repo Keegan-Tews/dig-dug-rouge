@@ -10,8 +10,9 @@ export const CLASSES = [
   },
   {
     id: 'sapper', name: 'Sapper', icon: '🥾', unlock: 'class_sapper',
-    desc: 'Moves 15% faster and digs at full speed. Hose reaches 1 tile less.',
+    desc: 'Moves 15% faster and digs at full speed. Hose reaches 1 tile less. Starts with 2 bombs.',
     start: {},
+    items: ['bomb', 'bomb'],
     apply: (s) => { s.speed *= 1.15; s.digPenalty = 1; s.hoseRange -= 1; },
   },
   {

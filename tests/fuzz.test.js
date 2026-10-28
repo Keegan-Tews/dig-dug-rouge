@@ -9,13 +9,13 @@ test('random play on every floor never crashes or produces NaN positions', () =>
   const dirs = [null, 'up', 'down', 'left', 'right'];
   for (let floor = 1; floor <= 20; floor++) {
     for (let seed = 0; seed < 3; seed++) {
-      const sim = new FloorSim(generateFloor(floor, seed * 31 + floor), { ...BASE_STATS, shield: 2 }, { hearts: 5 });
+      const sim = new FloorSim(generateFloor(floor, seed * 31 + floor), { ...BASE_STATS, shield: 2, itemSlots: 4 }, { hearts: 5, items: ['bomb', 'decoy', 'frost', 'drill'] });
       const rng = new Rng(seed + floor * 100);
       let input = {};
       for (let i = 0; i < 120 * 40 && (sim.status === 'playing' || sim.status === 'clearing' || sim.status === 'dying'); i++) {
-        if (i % 30 === 0) input = { dir: rng.pick(dirs), pumpPressed: rng.chance(0.3), pumpHeld: rng.chance(0.5) };
+        if (i % 30 === 0) input = { dir: rng.pick(dirs), pumpPressed: rng.chance(0.3), pumpHeld: rng.chance(0.5), usePressed: rng.chance(0.03), cyclePressed: rng.chance(0.05) };
         sim.update(1 / 120, input);
-        input = { ...input, pumpPressed: false };
+        input = { ...input, pumpPressed: false, usePressed: false, cyclePressed: false };
         sim.drainEvents();
       }
       for (const e of [sim.player, ...sim.enemies]) {

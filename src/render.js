@@ -1,5 +1,7 @@
 // Canvas renderer. All art is drawn procedurally (no sprite files).
 
+import { ITEM_BY_ID, BOMB_FUSE } from './items.js';
+import { GEAR_BY_ID } from './gear.js';
 import { TILE, HUD_H, VIEW_COLS, VIEW_ROWS, T_DIRT, T_BEDROCK, layerFor, actFor, TOTAL_FLOORS } from './constants.js';
 
 const DIRT = [
@@ -81,13 +83,26 @@ export class Renderer {
         this.addPopup(ev.x, ev.y, `+${ev.amount}g`);
         this.burst(ev.x, ev.y, '#ffd54f', 6);
       } else if (ev.type === 'fossil') {
-        this.addPopup(ev.x, ev.y, '+1 fossil', '#e1f5fe');
+        this.addPopup(ev.x, ev.y, `+${ev.amount || 1} fossil${(ev.amount || 1) > 1 ? 's' : ''}`, '#e1f5fe');
         this.burst(ev.x, ev.y, '#e1f5fe', 10);
       } else if (ev.type === 'dig') {
         if (Math.random() < 0.5) this.burst(ev.x, ev.y, '#a1887f', 2);
       } else if (ev.type === 'shield') {
         this.addPopup(this.lastPlayer?.x ?? 7, this.lastPlayer?.y ?? 8, 'BLOCKED', '#4fc3f7');
         this.shake = 0.2;
+      } else if (ev.type === 'gear') {
+        this.addPopup(ev.x, ev.y, `+${GEAR_BY_ID[ev.gear].name}`, '#ffd54f');
+        this.burst(ev.x, ev.y, '#ffd54f', 16);
+      } else if (ev.type === 'item') {
+        const it = ITEM_BY_ID[ev.item];
+        this.addPopup(ev.x, ev.y, `+${it.name}`, '#80deea');
+        this.burst(ev.x, ev.y, '#a1662f', 8);
+      } else if (ev.type === 'boom') {
+        this.burst(ev.x, ev.y, '#ffb74d', 30);
+        this.burst(ev.x, ev.y, '#757575', 14);
+        this.shake = Math.max(this.shake, 0.45);
+      } else if (ev.type === 'use' && ev.item === 'frost') {
+        this.burst(ev.x, ev.y, '#b3e5fc', 24);
       } else if (ev.type === 'clang') {
         this.addPopup(ev.x, ev.y, 'CLANG', '#b0bec5');
         this.burst(ev.x, ev.y, '#eceff1', 5);
@@ -145,6 +160,7 @@ export class Renderer {
     this.drawItems(sim, t);
     for (const r of sim.rocks) this.drawRock(r, t);
     for (const e of sim.enemies) this.drawFire(sim, e, t);
+    this.drawGadgets(sim, t);
     this.drawHose(sim);
     for (const e of sim.enemies) this.drawEnemy(e, t);
     this.drawPlayer(sim.player, t, sim);
@@ -156,6 +172,7 @@ export class Renderer {
       ctx.fillRect(0, 0, this.viewW, this.viewH);
     }
     if (sim.cols > VIEW_COLS || sim.rows > VIEW_ROWS) this.drawMinimap(sim);
+    this.drawPack(sim);
     if (view.banner) this.drawBanner(sim, view.banner);
     ctx.restore();
   }
@@ -251,6 +268,10 @@ export class Renderer {
         roundRect(ctx, px + inset, py + inset, TILE - inset * 2, TILE - inset * 2, 8);
         if (x + 1 < sim.cols && sim.tile(x + 1, y) === 0) ctx.fillRect(px + TILE / 2, py + inset, TILE, TILE - inset * 2);
         if (y + 1 < sim.rows && sim.tile(x, y + 1) === 0) ctx.fillRect(px + inset, py + TILE / 2, TILE - inset * 2, TILE);
+        // Fill the gap in the middle of open 2x2 areas (blast holes, crossings).
+        if (x + 1 < sim.cols && y + 1 < sim.rows && sim.tile(x + 1, y) === 0 && sim.tile(x, y + 1) === 0 && sim.tile(x + 1, y + 1) === 0) {
+          ctx.fillRect(px + TILE / 2, py + TILE / 2, TILE, TILE);
+        }
         if (y === 1) ctx.fillRect(px + inset, py - TILE / 2, TILE - inset * 2, TILE / 2 + 4);
       }
     }
@@ -279,6 +300,34 @@ export class Renderer {
         if (Math.sin(t * 3 + it.x * 1.7 + it.y) > 0.85) {
           ctx.fillStyle = '#fff';
           ctx.fillRect(cx + 1, cy - 4, 2, 2);
+        }
+      } else if (it.kind === 'chest') {
+        // Gear chest: bigger, banded, with a gold lock.
+        ctx.fillStyle = '#795548';
+        ctx.fillRect(cx - 11, cy - 6, 22, 14);
+        ctx.fillStyle = '#5d4037';
+        ctx.beginPath();
+        ctx.ellipse(cx, cy - 6, 11, 5, 0, Math.PI, 0);
+        ctx.fill();
+        ctx.fillStyle = '#ffca28';
+        ctx.fillRect(cx - 11, cy - 2, 22, 2);
+        ctx.fillRect(cx - 2, cy - 4, 4, 6);
+        if (Math.sin(t * 2 + it.x) > 0.8) {
+          ctx.fillStyle = '#fff';
+          ctx.fillRect(cx + 7, cy - 9, 2, 2);
+        }
+      } else if (it.kind === 'cache') {
+        // A small wooden crate with a metal band.
+        ctx.fillStyle = '#a1662f';
+        ctx.fillRect(cx - 8, cy - 7, 16, 14);
+        ctx.fillStyle = '#6d4c41';
+        ctx.fillRect(cx - 8, cy - 1, 16, 3);
+        ctx.strokeStyle = '#4e342e';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(cx - 7.5, cy - 6.5, 15, 13);
+        if (Math.sin(t * 2.5 + it.x + it.y * 1.3) > 0.9) {
+          ctx.fillStyle = '#fff';
+          ctx.fillRect(cx + 4, cy - 6, 2, 2);
         }
       } else {
         ctx.save();
@@ -558,6 +607,107 @@ export class Renderer {
     }
     ctx.restore();
     ctx.globalAlpha = 1;
+    if (e.frozen > 0) {
+      // An ice block around frozen foes, flickering as it thaws.
+      const thaw = e.frozen < 1 && Math.floor(t * 10) % 2 === 0;
+      ctx.fillStyle = thaw ? 'rgba(179,229,252,0.25)' : 'rgba(179,229,252,0.5)';
+      ctx.strokeStyle = '#e1f5fe';
+      ctx.lineWidth = 2;
+      const r = 14 * (boss ? 1.6 : 1);
+      ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
+      ctx.strokeRect(cx - r, cy - r, r * 2, r * 2);
+    }
+  }
+
+  drawGadgets(sim, t) {
+    const ctx = this.ctx;
+    for (const b of sim.bombs) {
+      const cx = b.x * TILE + TILE / 2;
+      const cy = b.y * TILE + TILE / 2;
+      const flash = b.fuse < BOMB_FUSE * 0.4 ? Math.floor(t * 16) % 2 === 0 : Math.floor(t * 6) % 2 === 0;
+      ctx.fillStyle = flash ? '#ef5350' : '#263238';
+      ctx.beginPath();
+      ctx.arc(cx, cy + 2, 9, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#8d6e63';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(cx + 4, cy - 5);
+      ctx.quadraticCurveTo(cx + 8, cy - 12, cx + 4, cy - 14);
+      ctx.stroke();
+      ctx.fillStyle = '#ffeb3b';
+      ctx.fillRect(cx + 2 + Math.sin(t * 30), cy - 16, 3, 3);
+    }
+    const d = sim.decoy;
+    if (d) {
+      const cx = d.x * TILE + TILE / 2;
+      const cy = d.y * TILE + TILE / 2 + Math.sin(t * 8) * 2;
+      ctx.globalAlpha = d.time < 1.5 && Math.floor(t * 10) % 2 === 0 ? 0.4 : 1;
+      ctx.fillStyle = '#ff8a65';
+      ctx.beginPath();
+      ctx.arc(cx, cy, 9, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(cx - 6, cy - 8, 4, 0, Math.PI * 2);
+      ctx.arc(cx + 6, cy - 8, 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#212121';
+      ctx.fillRect(cx - 4, cy - 3, 2, 2);
+      ctx.fillRect(cx + 2, cy - 3, 2, 2);
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 8px "Press Start 2P", ui-monospace, monospace';
+      ctx.textAlign = 'center';
+      if (Math.floor(t * 3) % 2 === 0) ctx.fillText('SQUEAK', cx, cy - 16);
+      ctx.globalAlpha = 1;
+    }
+    if (sim.drillTime > 0 && sim.player.walking) {
+      const p = sim.player;
+      if (Math.random() < 0.6) this.burst(p.x, p.y, '#ffe082', 1);
+    }
+  }
+
+  // Item slots along the bottom-left of the view.
+  drawPack(sim) {
+    const ctx = this.ctx;
+    const size = 26;
+    const y = this.viewH - size - 6;
+    for (let i = 0; i < sim.slots; i++) {
+      const x = 6 + i * (size + 4);
+      const id = sim.pack[i];
+      const sel = id && i === sim.selected;
+      ctx.fillStyle = 'rgba(11,9,16,0.7)';
+      ctx.fillRect(x, y, size, size);
+      ctx.strokeStyle = sel ? '#ffd54f' : 'rgba(245,230,200,0.35)';
+      ctx.lineWidth = sel ? 2 : 1;
+      ctx.strokeRect(x + 0.5, y + 0.5, size - 1, size - 1);
+      if (id) {
+        ctx.font = '15px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(ITEM_BY_ID[id].icon, x + size / 2, y + size / 2 + 1);
+      }
+    }
+    // Gear icons along the bottom-right.
+    for (let i = 0; i < sim.gear.length; i++) {
+      const x = this.viewW - 6 - (i + 1) * (size + 4) + 4;
+      ctx.fillStyle = 'rgba(11,9,16,0.7)';
+      ctx.fillRect(x, y, size, size);
+      ctx.strokeStyle = 'rgba(255,202,40,0.6)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x + 0.5, y + 0.5, size - 1, size - 1);
+      ctx.font = '15px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#fff';
+      ctx.fillText(GEAR_BY_ID[sim.gear[i]].icon, x + size / 2, y + size / 2 + 1);
+    }
+    if (sim.pack.length) {
+      ctx.font = '8px "Press Start 2P", ui-monospace, monospace';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = 'rgba(245,230,200,0.75)';
+      ctx.fillText(sim.pack.length > 1 ? 'E use  Q swap' : 'E use', 10 + sim.slots * (size + 4), y + size / 2);
+    }
+    ctx.textBaseline = 'middle';
   }
 
   drawPlayer(p, t, sim) {
@@ -638,6 +788,14 @@ export class Renderer {
       ctx.fillStyle = e.kind === 'boss' ? '#ffd54f' : KIND_COLOR[e.kind] || '#9ccc65';
       const r = e.kind === 'boss' ? 4 : 2;
       ctx.fillRect(ox + e.x * s + 1 - r / 2, oy + e.y * s + 1 - r / 2, r, r);
+    }
+    if (sim.stats.compass) {
+      const colors = { fossil: '#e1f5fe', cache: '#ffb74d', chest: '#ffca28' };
+      for (const it of sim.items) {
+        if (it.taken || !colors[it.kind]) continue;
+        ctx.fillStyle = colors[it.kind];
+        ctx.fillRect(ox + it.x * s, oy + it.y * s, 2, 2);
+      }
     }
     ctx.fillStyle = '#4fc3f7';
     ctx.fillRect(ox + sim.player.x * s - 1, oy + sim.player.y * s - 1, 4, 4);

@@ -20,11 +20,13 @@ Or open the folder with any other static server (`python3 -m http.server`, GitHu
 | --- | --- |
 | Move / dig | Arrow keys or WASD |
 | Pump | Space, Z, J or X (hold to keep pumping) |
+| Use item | E, K or C |
+| Switch item | Q |
 | Pause | P or Esc |
 | Mute | M |
 | Pick a card | 1 to 4 |
 
-Touch devices get an on-screen d-pad and pump button.
+Touch devices get an on-screen d-pad plus pump, item and switch buttons.
 
 ## The run
 
@@ -36,6 +38,26 @@ Touch devices get an on-screen d-pad and pump button.
 - **Gold** is lost when you die. **Fossils** (one or two buried in the deeper half of every floor) are banked between runs and spent in the **Fossil Vault** on permanent stat upgrades (speed, gold, hose reach, deflate time, an extra per-floor shield, extra starting hearts), new classes and new upgrade-pool options.
 - **Classes:** Digger (all-rounder), plus Sapper (fast digger, shorter hose) and Brute (slow, starts with a Hard Hat, pops foes in 3 pumps), which are unlocked in the vault.
 - Every floor is generated from the run seed, so a run can be replayed.
+
+### Items
+
+You carry up to 2 usable items (Big Pack and the Deep Pockets perk add slots). Find them in buried 📦 caches (one or two per floor) or buy them in the shop. They carry between floors and are lost when you die. The Sapper starts with 2 bombs.
+
+- 💣 **Bomb**: drop it and run. After a short fuse it blasts dirt, rocks and nearby foes (bosses take heavy damage), and you too if you're still close.
+- 🌀 **Turbo Drill**: 5 seconds of 50% faster movement with full-speed digging.
+- 🧸 **Squeaky Decoy**: foes chase the decoy instead of you for 6 seconds.
+- ❄️ **Frost Flask**: freezes nearby foes for 4 seconds. Frozen foes are harmless and can be pumped.
+
+### Gear
+
+Each floor has a gear chest near the bottom. Gear works passively for the rest of the run, you carry up to 3 pieces, and it is lost when you die. A chest found with full slots gives 3 fossils instead.
+
+- 🔩 **Drill Bit**: dig at full walking speed.
+- 📯 **Wide Nozzle**: the hose also catches foes one tile off its line.
+- 🔧 **Pressure Valve**: foes pop with one less pump.
+- 🧭 **Fossil Compass**: fossils, caches and chests show on the minimap.
+
+The first time you ever get each item or piece of gear, the game pauses with a short card explaining how it works. Each card is shown once, and that is remembered between runs.
 
 ### Foes
 
@@ -53,6 +75,7 @@ Touch devices get an on-screen d-pad and pump button.
 | `src/levelgen.js` | Seeded procedural floor layouts and difficulty curve. |
 | `src/run.js` | Run state: floors, rewards, shop, death and victory. |
 | `src/upgrades.js` / `src/classes.js` | Upgrade catalog, classes and stat derivation. |
+| `src/items.js` / `src/gear.js` | Usable item and gear catalogs and tuning. |
 | `src/meta.js` | Fossil Vault perks and unlocks, and the save kept between runs (localStorage). |
 | `src/render.js` | Canvas renderer; all art is drawn in code. |
 | `src/main.js` | Scenes, menus and the fixed-step game loop. |
