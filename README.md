@@ -48,6 +48,17 @@ You carry up to 2 usable items (Big Pack and the Deep Pockets perk add slots). F
 - 🧸 **Squeaky Decoy**: foes chase the decoy instead of you for 6 seconds.
 - ❄️ **Frost Flask**: freezes nearby foes for 4 seconds. Frozen foes are harmless and can be pumped.
 
+### Gear
+
+Each floor has a gear chest near the bottom. Gear works passively for the rest of the run, you carry up to 3 pieces, and it is lost when you die. A chest found with full slots gives 3 fossils instead.
+
+- 🔩 **Drill Bit**: dig at full walking speed.
+- 📯 **Wide Nozzle**: the hose also catches foes one tile off its line.
+- 🔧 **Pressure Valve**: foes pop with one less pump.
+- 🧭 **Fossil Compass**: fossils, caches and chests show on the minimap.
+
+The first time you ever get each item or piece of gear, the game pauses with a short card explaining how it works. Each card is shown once, and that is remembered between runs.
+
 ### Foes
 
 - **Pufflings** wander tunnels and, after a while, drift through dirt as ghostly eyes.
@@ -64,7 +75,7 @@ You carry up to 2 usable items (Big Pack and the Deep Pockets perk add slots). F
 | `src/levelgen.js` | Seeded procedural floor layouts and difficulty curve. |
 | `src/run.js` | Run state: floors, rewards, shop, death and victory. |
 | `src/upgrades.js` / `src/classes.js` | Upgrade catalog, classes and stat derivation. |
-| `src/items.js` | Usable item catalog and tuning. |
+| `src/items.js` / `src/gear.js` | Usable item and gear catalogs and tuning. |
 | `src/meta.js` | Fossil Vault perks and unlocks, and the save kept between runs (localStorage). |
 | `src/render.js` | Canvas renderer; all art is drawn in code. |
 | `src/main.js` | Scenes, menus and the fixed-step game loop. |

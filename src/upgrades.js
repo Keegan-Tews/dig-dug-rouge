@@ -15,6 +15,8 @@ export const BASE_STATS = {
   digPenalty: 0.8, // speed multiplier while digging through dirt
   popDiscount: 0, // pumps fewer needed to pop a foe
   itemSlots: 2, // usable items the pack can hold
+  wideNozzle: false, // hose catches foes one tile off its line
+  compass: false, // minimap shows buried treasure
 };
 
 // `locked` upgrades only enter the pool once bought in the Fossil Vault.

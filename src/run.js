@@ -6,6 +6,7 @@ import { deriveStats, availableUpgrades, UPGRADE_BY_ID } from './upgrades.js';
 import { CLASS_BY_ID, classUnlocked } from './classes.js';
 import { applyPerks, perkHearts } from './meta.js';
 import { ITEMS, ITEM_BY_ID } from './items.js';
+import { applyGear } from './gear.js';
 
 export const BASE_HEARTS = 1;
 export const MAX_HEARTS = 5;
@@ -25,6 +26,7 @@ export function newRun(seed, meta, classId = 'digger') {
     perks,
     upgrades: { ...cls.start },
     items: (cls.items || []).slice(),
+    gear: [],
     unlocked,
     kills: 0,
     goldEarned: 0,
@@ -34,7 +36,7 @@ export function newRun(seed, meta, classId = 'digger') {
 }
 
 export function runStats(run) {
-  return applyPerks(deriveStats(run.upgrades, CLASS_BY_ID[run.classId]), run.perks);
+  return applyGear(applyPerks(deriveStats(run.upgrades, CLASS_BY_ID[run.classId]), run.perks), run.gear);
 }
 
 export function floorSeed(run, floor = run.floor) {
@@ -118,6 +120,7 @@ export function completeFloor(run, sim) {
   run.kills += sim.kills;
   run.hearts = sim.player.hearts;
   run.items = sim.pack.slice();
+  run.gear = sim.gear.slice();
   return bonus;
 }
 

@@ -9,6 +9,7 @@ import { Input } from './input.js';
 import { Sfx } from './audio.js';
 import { UPGRADE_BY_ID } from './upgrades.js';
 import { ITEM_BY_ID } from './items.js';
+import { GEAR_BY_ID, GEAR_SLOTS } from './gear.js';
 import { CLASSES, CLASS_BY_ID, classUnlocked } from './classes.js';
 import {
   UNLOCKS, PERKS, loadMeta, saveMeta, buyUnlock, buyPerk, perkLevel, perkCost, recordRunEnd,
@@ -40,6 +41,8 @@ const state = {
   lastBonus: 0,
   shop: null,
   rerolls: 0,
+  tips: [],
+  tip: null,
 };
 
 // Exposed for automated smoke tests and debugging from the console.
@@ -161,6 +164,7 @@ function startRun(classId) {
   state.meta.lastClass = classId;
   saveMeta(storage, state.meta);
   state.run = newRun(randomSeed(), state.meta, classId);
+  state.tips = [];
   startFloor();
 }
 
@@ -168,7 +172,10 @@ function startFloor() {
   const run = state.run;
   const stats = runStats(run);
   const layout = generateFloor(run.floor, floorSeed(run), { fossilLuck: stats.fossilLuck });
-  state.sim = new FloorSim(layout, stats, { hearts: run.hearts, items: run.items });
+  state.sim = new FloorSim(layout, stats, { hearts: run.hearts, items: run.items, gear: run.gear });
+  // Explain anything carried in (starting items, shop buys) that is new to this player.
+  for (const id of run.items) queueTip('item', id);
+  for (const id of run.gear) queueTip('gear', id);
   renderer.updateCamera(state.sim, 0, true);
   renderer.popups = [];
   renderer.particles = [];
@@ -311,6 +318,34 @@ function showPause() {
     </div>`);
 }
 
+// ---- first-time tips ----
+
+function queueTip(kind, id) {
+  const key = `${kind}:${id}`;
+  if (state.meta.seen.includes(key) || state.tips.includes(key)) return;
+  state.tips.push(key);
+}
+
+function showTip() {
+  const key = state.tips.shift();
+  const [kind, id] = key.split(':');
+  const def = kind === 'item' ? ITEM_BY_ID[id] : GEAR_BY_ID[id];
+  state.paused = true;
+  state.tip = key;
+  const how = kind === 'item'
+    ? 'It goes in your pack (bottom left). Press <b>E</b> to use the selected item and <b>Q</b> to switch items. On touch screens, use the ITEM and ⟳ buttons.'
+    : `Gear works on its own for the rest of the run. You can carry up to ${GEAR_SLOTS} pieces (bottom right). A chest found with full gear slots gives fossils instead.`;
+  el(`
+    <div class="panel tip">
+      <p class="small dim">${kind === 'item' ? 'New item' : 'New gear'}</p>
+      <div class="tip-icon">${def.icon}</div>
+      <h2>${def.name}</h2>
+      <p>${def.desc}</p>
+      <p class="small">${how}</p>
+      <div class="buttons"><button data-action="tipdone">Got it</button></div>
+    </div>`);
+}
+
 function resume() {
   state.paused = false;
   input.reset();
@@ -326,6 +361,15 @@ const actions = {
   help: showHelp,
   vault: showVault,
   resume,
+  tipdone: () => {
+    if (state.tip && !state.meta.seen.includes(state.tip)) {
+      state.meta.seen.push(state.tip);
+      saveMeta(storage, state.meta);
+    }
+    state.tip = null;
+    if (state.tips.length) showTip();
+    else resume();
+  },
   abandon: () => {
     state.paused = false;
     showEnd(false);
@@ -377,6 +421,10 @@ input.onPress((code) => {
     sfx.muted = !sfx.muted;
     return;
   }
+  if (state.tip && code === 'Escape') {
+    actions.tipdone();
+    return;
+  }
   if (state.scene === 'play' && (code === 'Escape' || code === 'KeyP')) {
     if (state.paused) resume();
     else showPause();
@@ -411,9 +459,15 @@ function frame(now) {
         state.sim.update(STEP, input.sample());
         const events = state.sim.drainEvents();
         renderer.handleEvents(events);
-        for (const ev of events) sfx.play(ev.type);
+        for (const ev of events) {
+          sfx.play(ev.type);
+          if (ev.type === 'item') queueTip('item', ev.item);
+          if (ev.type === 'gear') queueTip('gear', ev.gear);
+        }
         acc -= STEP;
+        if (state.tips.length) break;
       }
+      if (state.tips.length) showTip();
     }
     renderer.step(dt);
     renderer.updateCamera(state.sim, dt);

@@ -123,7 +123,9 @@ test('the pack carries over between floors and the shop respects its size', () =
   assert.ok(buyShopItem(r, offer));
   assert.equal(r.items.length, runStats(r).itemSlots);
 
-  const sim = { gold: 0, fossils: 0, kills: 0, stats: runStats(r), player: { hearts: 1 }, pack: ['frost'] };
+  const sim = { gold: 0, fossils: 0, kills: 0, stats: runStats(r), player: { hearts: 1 }, pack: ['frost'], gear: ['drill_bit'] };
   completeFloor(r, sim);
   assert.deepEqual(r.items, ['frost']);
+  assert.deepEqual(r.gear, ['drill_bit']);
+  assert.equal(runStats(r).digPenalty, 1, 'gear applies on later floors');
 });

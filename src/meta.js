@@ -28,7 +28,7 @@ export const UNLOCKS = [
 const KEY = 'tunnel-pop-meta-v1';
 
 export function defaultMeta() {
-  return { fossils: 0, unlocked: [], perks: {}, bestFloor: 0, runs: 0, wins: 0, lastClass: 'digger' };
+  return { fossils: 0, unlocked: [], perks: {}, bestFloor: 0, runs: 0, wins: 0, lastClass: 'digger', seen: [] };
 }
 
 export function loadMeta(storage) {

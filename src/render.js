@@ -1,6 +1,7 @@
 // Canvas renderer. All art is drawn procedurally (no sprite files).
 
 import { ITEM_BY_ID, BOMB_FUSE } from './items.js';
+import { GEAR_BY_ID } from './gear.js';
 import { TILE, HUD_H, VIEW_COLS, VIEW_ROWS, T_DIRT, T_BEDROCK, layerFor, actFor, TOTAL_FLOORS } from './constants.js';
 
 const DIRT = [
@@ -82,13 +83,16 @@ export class Renderer {
         this.addPopup(ev.x, ev.y, `+${ev.amount}g`);
         this.burst(ev.x, ev.y, '#ffd54f', 6);
       } else if (ev.type === 'fossil') {
-        this.addPopup(ev.x, ev.y, '+1 fossil', '#e1f5fe');
+        this.addPopup(ev.x, ev.y, `+${ev.amount || 1} fossil${(ev.amount || 1) > 1 ? 's' : ''}`, '#e1f5fe');
         this.burst(ev.x, ev.y, '#e1f5fe', 10);
       } else if (ev.type === 'dig') {
         if (Math.random() < 0.5) this.burst(ev.x, ev.y, '#a1887f', 2);
       } else if (ev.type === 'shield') {
         this.addPopup(this.lastPlayer?.x ?? 7, this.lastPlayer?.y ?? 8, 'BLOCKED', '#4fc3f7');
         this.shake = 0.2;
+      } else if (ev.type === 'gear') {
+        this.addPopup(ev.x, ev.y, `+${GEAR_BY_ID[ev.gear].name}`, '#ffd54f');
+        this.burst(ev.x, ev.y, '#ffd54f', 16);
       } else if (ev.type === 'item') {
         const it = ITEM_BY_ID[ev.item];
         this.addPopup(ev.x, ev.y, `+${it.name}`, '#80deea');
@@ -296,6 +300,21 @@ export class Renderer {
         if (Math.sin(t * 3 + it.x * 1.7 + it.y) > 0.85) {
           ctx.fillStyle = '#fff';
           ctx.fillRect(cx + 1, cy - 4, 2, 2);
+        }
+      } else if (it.kind === 'chest') {
+        // Gear chest: bigger, banded, with a gold lock.
+        ctx.fillStyle = '#795548';
+        ctx.fillRect(cx - 11, cy - 6, 22, 14);
+        ctx.fillStyle = '#5d4037';
+        ctx.beginPath();
+        ctx.ellipse(cx, cy - 6, 11, 5, 0, Math.PI, 0);
+        ctx.fill();
+        ctx.fillStyle = '#ffca28';
+        ctx.fillRect(cx - 11, cy - 2, 22, 2);
+        ctx.fillRect(cx - 2, cy - 4, 4, 6);
+        if (Math.sin(t * 2 + it.x) > 0.8) {
+          ctx.fillStyle = '#fff';
+          ctx.fillRect(cx + 7, cy - 9, 2, 2);
         }
       } else if (it.kind === 'cache') {
         // A small wooden crate with a metal band.
@@ -668,6 +687,19 @@ export class Renderer {
         ctx.fillText(ITEM_BY_ID[id].icon, x + size / 2, y + size / 2 + 1);
       }
     }
+    // Gear icons along the bottom-right.
+    for (let i = 0; i < sim.gear.length; i++) {
+      const x = this.viewW - 6 - (i + 1) * (size + 4) + 4;
+      ctx.fillStyle = 'rgba(11,9,16,0.7)';
+      ctx.fillRect(x, y, size, size);
+      ctx.strokeStyle = 'rgba(255,202,40,0.6)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x + 0.5, y + 0.5, size - 1, size - 1);
+      ctx.font = '15px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = '#fff';
+      ctx.fillText(GEAR_BY_ID[sim.gear[i]].icon, x + size / 2, y + size / 2 + 1);
+    }
     if (sim.pack.length) {
       ctx.font = '8px "Press Start 2P", ui-monospace, monospace';
       ctx.textAlign = 'left';
@@ -756,6 +788,14 @@ export class Renderer {
       ctx.fillStyle = e.kind === 'boss' ? '#ffd54f' : KIND_COLOR[e.kind] || '#9ccc65';
       const r = e.kind === 'boss' ? 4 : 2;
       ctx.fillRect(ox + e.x * s + 1 - r / 2, oy + e.y * s + 1 - r / 2, r, r);
+    }
+    if (sim.stats.compass) {
+      const colors = { fossil: '#e1f5fe', cache: '#ffb74d', chest: '#ffca28' };
+      for (const it of sim.items) {
+        if (it.taken || !colors[it.kind]) continue;
+        ctx.fillStyle = colors[it.kind];
+        ctx.fillRect(ox + it.x * s, oy + it.y * s, 2, 2);
+      }
     }
     ctx.fillStyle = '#4fc3f7';
     ctx.fillRect(ox + sim.player.x * s - 1, oy + sim.player.y * s - 1, 4, 4);

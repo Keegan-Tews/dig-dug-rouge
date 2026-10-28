@@ -3,6 +3,7 @@
 
 import { T_OPEN, T_DIRT, T_BEDROCK, DIRS, OPPOSITE, layerFor } from './constants.js';
 import { Rng } from './rng.js';
+import { GEAR, GEAR_BY_ID, GEAR_SLOTS, FULL_CHEST_FOSSILS } from './gear.js';
 import { BOMB_FUSE, BOMB_RADIUS, DRILL_TIME, DECOY_TIME, FROST_TIME, FROST_RANGE } from './items.js';
 
 const POP_AT = { puff: 4, scorch: 4, gnawler: 4, splitter: 3, mini: 2, shellback: 4 };
@@ -47,6 +48,7 @@ export class FloorSim {
     this.slots = stats.itemSlots ?? 2;
     this.pack = (opts.items || []).slice(0, this.slots);
     this.selected = 0;
+    this.gear = (opts.gear || []).slice();
     this.bombs = [];
     this.decoy = null;
     this.drillTime = 0;
@@ -231,6 +233,18 @@ export class FloorSim {
         const g = Math.round(it.value * this.stats.goldMult);
         this.gold += g;
         this.emit('gold', { x, y, amount: g });
+      } else if (it.kind === 'chest') {
+        const options = GEAR.filter((g) => !this.gear.includes(g.id));
+        if (this.gear.length < GEAR_SLOTS && options.length) {
+          const g = this.rng.pick(options);
+          this.gear.push(g.id);
+          // Stats are this floor's own copy, so the gear works right away.
+          GEAR_BY_ID[g.id].apply(this.stats);
+          this.emit('gear', { x, y, gear: g.id });
+        } else {
+          this.fossils += FULL_CHEST_FOSSILS;
+          this.emit('fossil', { x, y, amount: FULL_CHEST_FOSSILS });
+        }
       } else if (it.kind === 'cache') {
         if (this.pack.length < this.slots) {
           this.pack.push(it.item);
@@ -387,7 +401,7 @@ export class FloorSim {
           h.state = 'retract';
           return;
         }
-        const hit = this.enemies.find((e) => this.pumpable(e) && dist(tx, ty, e.x, e.y) < (e.kind === 'boss' ? 0.95 : 0.55));
+        const hit = this.enemies.find((e) => this.pumpable(e) && this.hoseTouches(e, tx, ty, dx));
         if (hit && this.armored(hit, h.dir)) {
           h.len = l;
           h.state = 'retract';
@@ -429,6 +443,16 @@ export class FloorSim {
         h.auto = this.stats.autoPumpInterval;
       }
     }
+  }
+
+  hoseTouches(e, tx, ty, dx) {
+    const reach = e.kind === 'boss' ? 0.95 : 0.55;
+    if (dist(tx, ty, e.x, e.y) < reach) return true;
+    if (!this.stats.wideNozzle) return false;
+    // Wide Nozzle: also catch foes up to one tile either side of the line.
+    const along = dx ? Math.abs(tx - e.x) : Math.abs(ty - e.y);
+    const side = dx ? Math.abs(ty - e.y) : Math.abs(tx - e.x);
+    return along < reach && side < 1.1;
   }
 
   hoseDir(input) {

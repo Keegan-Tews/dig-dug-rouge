@@ -13,6 +13,7 @@ const SOUNDS = {
   fire: { type: 'sawtooth', f: [200, 90], d: 0.4, v: 0.06 },
   clang: { type: 'square', f: [1400, 1300], d: 0.08, v: 0.06 },
   split: { type: 'sine', f: [500, 900], d: 0.15, v: 0.07 },
+  gear: { type: 'triangle', f: [392, 1175], d: 0.35, v: 0.09 },
   item: { type: 'square', f: [523, 784], d: 0.15, v: 0.07 },
   boom: { type: 'sawtooth', f: [180, 30], d: 0.5, v: 0.16 },
   use: { type: 'triangle', f: [700, 500], d: 0.1, v: 0.06 },

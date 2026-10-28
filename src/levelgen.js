@@ -197,6 +197,9 @@ function tryGenerate(floor, seed, fossilLuck) {
     if (items.length > before) items[items.length - 1].item = rng.pick(ITEMS).id;
   }
 
+  // A gear chest near the bottom of every floor; the sim decides what is inside.
+  placeItem('chest', ROWS - 6, 1);
+
   // One fossil is guaranteed on every floor; a second turns up about half the time.
   placeItem('fossil', Math.floor(ROWS / 2), 1);
   if (rng.chance(Math.min(0.9, 0.45 + floor * 0.01 + fossilLuck * 0.2))) placeItem('fossil', Math.floor(ROWS / 2), 1);
