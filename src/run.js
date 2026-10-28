@@ -1,7 +1,7 @@
 // Run state: one life through 20 floors, with upgrade picks and shops between.
 
 import { Rng, hashSeed } from './rng.js';
-import { TOTAL_FLOORS, BOSS_FLOORS, SHOP_EVERY } from './constants.js';
+import { TOTAL_FLOORS, BOSS_FLOORS, SHOP_EVERY, ROUTES, actFor, zoneFor } from './constants.js';
 import { deriveStats, availableUpgrades, UPGRADE_BY_ID } from './upgrades.js';
 import { CLASS_BY_ID, classUnlocked } from './classes.js';
 import { applyPerks, perkHearts } from './meta.js';
@@ -27,6 +27,7 @@ export function newRun(seed, meta, classId = 'digger') {
     upgrades: { ...cls.start },
     items: (cls.items || []).slice(),
     gear: [],
+    route: {}, // act number -> chosen zone id
     unlocked,
     kills: 0,
     goldEarned: 0,
@@ -56,7 +57,25 @@ export function screensAfterFloor(floor) {
   if (floor >= TOTAL_FLOORS) return ['victory'];
   const screens = ['reward'];
   if (floor % SHOP_EVERY === 0) screens.push('shop');
+  // Entering an act with more than one zone: pick the path.
+  const next = actFor(floor + 1).num;
+  if (next !== actFor(floor).num && ROUTES[next]) screens.push('route');
   return screens;
+}
+
+export function routeOptions(run) {
+  return ROUTES[actFor(run.floor + 1).num] || [];
+}
+
+export function chooseRoute(run, zoneId) {
+  const act = actFor(run.floor + 1).num;
+  if (!(ROUTES[act] || []).includes(zoneId)) return false;
+  run.route = { ...run.route, [act]: zoneId };
+  return true;
+}
+
+export function runZone(run, floor = run.floor) {
+  return zoneFor(floor, run.route);
 }
 
 export function rewardChoices(run, rng) {

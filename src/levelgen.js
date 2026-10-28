@@ -7,7 +7,7 @@
 
 import { Rng } from './rng.js';
 import { ITEMS } from './items.js';
-import { T_OPEN, T_DIRT, T_BEDROCK, BOSS_FLOORS, actFor } from './constants.js';
+import { T_OPEN, T_DIRT, T_BEDROCK, T_ICE, BOSS_FLOORS, actFor, zoneFor } from './constants.js';
 
 const MAP_SIZES = { 1: { cols: 19, rows: 24 }, 2: { cols: 23, rows: 30 }, 3: { cols: 27, rows: 36 } };
 const BASE_AREA = 15 * 18; // the original single-screen field
@@ -20,8 +20,9 @@ export function startFor(cols) {
   return { x: Math.floor(cols / 2), y: 8 };
 }
 
-export function difficulty(floor) {
+export function difficulty(floor, zoneId = zoneFor(floor).id) {
   const act = actFor(floor).num;
+  const frozen = zoneId === 'frozen';
   const { cols, rows } = mapSize(floor);
   const area = (cols * rows) / BASE_AREA;
   return {
@@ -32,8 +33,11 @@ export function difficulty(floor) {
     ghostDelay: [Math.max(4, 11 - floor * 0.35), Math.max(7, 17 - floor * 0.45)],
     chase: Math.min(0.75, 0.3 + floor * 0.025),
     rockCount: Math.round((floor <= 2 ? 3 : 4) * area),
-    bedrockBlobs: Math.round((act === 1 ? 0 : act === 2 ? 3 : 4) * area),
+    bedrockBlobs: Math.round((act === 1 ? 0 : frozen ? 1 : act === 2 ? 3 : 4) * area),
+    iceBlobs: frozen ? Math.round(7 * area) : 0,
+    icicles: frozen ? Math.round(3 * area) : 0,
     nuggets: Math.round((3 + Math.min(4, Math.floor(floor / 4))) * area),
+    zone: zoneId,
   };
 }
 
@@ -41,7 +45,9 @@ export function difficulty(floor) {
 export const FOE_INTRO = { gnawler: 4, splitter: 8, shellback: 12 };
 
 export function pickKind(rng, floor, diff) {
-  const weights = [['puff', 1 - diff.scorchRatio], ['scorch', diff.scorchRatio]];
+  // In the Frozen Caverns, Chillers take the place of fire breathers.
+  const breather = diff.zone === 'frozen' ? 'chiller' : 'scorch';
+  const weights = [['puff', 1 - diff.scorchRatio], [breather, diff.scorchRatio]];
   for (const [kind, from] of Object.entries(FOE_INTRO)) {
     if (floor >= from) weights.push([kind, Math.min(0.35, 0.15 + (floor - from) * 0.02)]);
   }
@@ -61,20 +67,21 @@ export function bossLevel(floor) {
 
 export function generateFloor(floor, seed, opts = {}) {
   const fossilLuck = opts.fossilLuck || 0;
+  const zone = opts.zone || zoneFor(floor).id;
   // Retry with a derived seed if a layout can't fit everything.
   for (let attempt = 0; attempt < 20; attempt++) {
-    const layout = tryGenerate(floor, (seed + attempt * 7919) >>> 0, fossilLuck);
+    const layout = tryGenerate(floor, (seed + attempt * 7919) >>> 0, fossilLuck, zone);
     if (layout) return layout;
   }
   throw new Error(`Could not generate floor ${floor}`);
 }
 
-function tryGenerate(floor, seed, fossilLuck) {
+function tryGenerate(floor, seed, fossilLuck, zone) {
   const rng = new Rng(seed);
   const { cols: COLS, rows: ROWS } = mapSize(floor);
   const START = startFor(COLS);
   const idx = (x, y) => y * COLS + x;
-  const diff = difficulty(floor);
+  const diff = difficulty(floor, zone);
   const boss = bossLevel(floor);
   const grid = new Uint8Array(COLS * ROWS).fill(T_DIRT);
   for (let x = 0; x < COLS; x++) grid[idx(x, 0)] = T_OPEN;
@@ -157,8 +164,36 @@ function tryGenerate(floor, seed, fossilLuck) {
     }
   }
 
+  // Ice blobs (Frozen Caverns): diggable, but slowly.
+  for (let b = 0; b < diff.iceBlobs; b++) {
+    const w = rng.int(2, 4);
+    const h = rng.int(1, 3);
+    const x0 = rng.int(0, COLS - w);
+    const y0 = rng.int(2, ROWS - 1 - h);
+    for (let y = y0; y < y0 + h; y++) for (let x = x0; x < x0 + w; x++) {
+      if (grid[idx(x, y)] === T_DIRT && !reserved[idx(x, y)]) grid[idx(x, y)] = T_ICE;
+    }
+  }
+
   const taken = new Set();
   const key = (x, y) => `${x},${y}`;
+
+  // Icicles hang from the ceiling of open tunnels.
+  const icicles = [];
+  const spots = [];
+  for (let y = 2; y < ROWS - 2; y++) {
+    for (let x = 0; x < COLS; x++) {
+      // Keep them off the start tunnel so the first step is never a trap.
+      if (Math.abs(x - START.x) <= 2 && Math.abs(y - START.y) <= 2) continue;
+      if (x === START.x) continue;
+      const above = grid[idx(x, y - 1)];
+      if (grid[idx(x, y)] === T_OPEN && (above === T_DIRT || above === T_ICE)) spots.push({ x, y });
+    }
+  }
+  for (const s of rng.shuffle(spots).slice(0, diff.icicles)) {
+    icicles.push(s);
+    taken.add(key(s.x, s.y));
+  }
 
   // Rocks sit in dirt with dirt directly below, never over an open tile,
   // so nothing falls until the player digs underneath.
@@ -213,6 +248,8 @@ function tryGenerate(floor, seed, fossilLuck) {
     start: { ...START },
     enemies,
     rocks,
+    icicles,
+    zone,
     items,
     boss,
     difficulty: diff,
