@@ -2,7 +2,7 @@
 
 import { ITEM_BY_ID, BOMB_FUSE } from './items.js';
 import { GEAR_BY_ID } from './gear.js';
-import { TILE, HUD_H, VIEW_COLS, VIEW_ROWS, T_DIRT, T_BEDROCK, T_ICE, T_VINE, layerFor, actFor, TOTAL_FLOORS } from './constants.js';
+import { TILE, HUD_H, VIEW_COLS, VIEW_ROWS, T_DIRT, T_BEDROCK, T_ICE, T_VINE, T_LAVA, layerFor, actFor, TOTAL_FLOORS } from './constants.js';
 
 const DIRT = [
   null,
@@ -13,10 +13,11 @@ const DIRT = [
 ];
 const DIRT_FROZEN = [null, ['#dfe9f0', '#c5d6e2'], ['#b9cfdf', '#a1bcd0'], ['#8fb0c9', '#7a9cb7'], ['#6987a6', '#56738f']];
 const DIRT_FUNGAL = [null, ['#3f4a3a', '#34402f'], ['#3a3d4c', '#2f3240'], ['#3a3050', '#2e2642'], ['#2b2340', '#211b33']];
+const DIRT_MAGMA = [null, ['#5a3a30', '#4a2c24'], ['#55291f', '#441f17'], ['#4d1d15', '#3c140e'], ['#3a120c', '#2a0b07']];
 const DIRT_ACT3 = [null, ['#6b5b8a', '#584a74'], ['#4f4a7d', '#3f3b66'], ['#3d3a66', '#302d52'], ['#2a2847', '#201e38']];
 const TUNNEL = '#120d16';
 const KIND_COLOR = {
-  puff: '#7cb342', scorch: '#ff7043', chiller: '#4fc3f7', sporeling: '#ce93d8', gnawler: '#8d6e63', splitter: '#ba68c8', mini: '#f48fb1', shellback: '#26a69a',
+  puff: '#7cb342', scorch: '#ff7043', chiller: '#4fc3f7', sporeling: '#ce93d8', magmite: '#ff8a50', gnawler: '#8d6e63', splitter: '#ba68c8', mini: '#f48fb1', shellback: '#26a69a',
 };
 
 export class Renderer {
@@ -107,6 +108,10 @@ export class Renderer {
         this.burst(ev.x, ev.y, '#b3e5fc', 24);
       } else if (ev.type === 'chill') {
         this.addPopup(ev.x, ev.y, 'FROZEN!', '#81d4fa');
+      } else if (ev.type === 'lava') {
+        this.burst(ev.x, ev.y, '#ff9800', 5);
+      } else if (ev.type === 'steam') {
+        this.burst(ev.x, ev.y - 1, '#eceff1', 8);
       } else if (ev.type === 'spored') {
         this.addPopup(ev.x, ev.y, 'SLOWED', '#ce93d8');
       } else if (ev.type === 'spore') {
@@ -171,6 +176,7 @@ export class Renderer {
     for (const r of sim.rocks) this.drawRock(r, t);
     for (const ic of sim.icicles) this.drawIcicle(ic, t);
     if (sim.zone === 'fungal') this.drawFungus(sim, t);
+    if (sim.zone === 'magma') this.drawMagma(sim, t);
     for (const e of sim.enemies) this.drawFire(sim, e, t);
     this.drawGadgets(sim, t);
     this.drawHose(sim);
@@ -234,7 +240,7 @@ export class Renderer {
 
   drawGrid(sim, run) {
     const ctx = this.ctx;
-    const palette = sim.zone === 'frozen' ? DIRT_FROZEN : sim.zone === 'fungal' ? DIRT_FUNGAL : actFor(run.floor).num === 3 ? DIRT_ACT3 : DIRT;
+    const palette = sim.zone === 'frozen' ? DIRT_FROZEN : sim.zone === 'fungal' ? DIRT_FUNGAL : sim.zone === 'magma' ? DIRT_MAGMA : actFor(run.floor).num === 3 ? DIRT_ACT3 : DIRT;
     // Sky / surface row.
     const sky = ctx.createLinearGradient(0, 0, 0, TILE);
     sky.addColorStop(0, '#203a5c');
@@ -289,6 +295,8 @@ export class Renderer {
           ctx.fillStyle = '#8bc34a';
           ctx.fillRect(px + 9 + h * 3, py + 12, 5, 4);
           ctx.fillRect(px + 20 - h, py + 22, 5, 4);
+        } else if (tile === T_LAVA) {
+          this.drawLava(px, py, x, y);
         } else if (tile === T_BEDROCK) {
           ctx.fillStyle = '#4a4a55';
           ctx.fillRect(px, py, TILE, TILE);
@@ -470,6 +478,77 @@ export class Renderer {
     ctx.lineTo(x + 1, top + 24);
     ctx.closePath();
     ctx.fill();
+  }
+
+  drawLava(px, py, x, y) {
+    const ctx = this.ctx;
+    const t = this.sim ? this.sim.time : 0;
+    ctx.fillStyle = '#e65100';
+    ctx.fillRect(px, py, TILE, TILE);
+    ctx.fillStyle = '#ff9800';
+    const w = Math.sin(t * 2 + x * 1.3 + y) * 3;
+    ctx.fillRect(px + 3, py + 8 + w, TILE - 6, 6);
+    ctx.fillRect(px + 8, py + 20 - w, TILE - 14, 5);
+    // A bubble now and then.
+    const b = (t * 0.8 + x * 0.37 + y * 0.61) % 1;
+    if (b < 0.35) {
+      ctx.fillStyle = '#ffe082';
+      ctx.beginPath();
+      ctx.arc(px + 10 + ((x * 7 + y * 3) % 12), py + 18 - b * 20, 2 + b * 6, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // Creeping lava warnings, steam vents and their blasts, burning trails.
+  drawMagma(sim, t) {
+    const ctx = this.ctx;
+    for (const s of sim.seeps) {
+      const k = 1 - s.timer / 1.2;
+      ctx.fillStyle = `rgba(255,112,67,${0.25 + 0.35 * k * (0.6 + 0.4 * Math.sin(t * 20))})`;
+      roundRect(ctx, s.x * TILE + 3, s.y * TILE + 3, TILE - 6, TILE - 6, 8);
+    }
+    for (const em of sim.embers) {
+      const cx = em.x * TILE + TILE / 2;
+      const cy = em.y * TILE + TILE - 6;
+      const k = Math.min(1, em.time / 0.6);
+      ctx.globalAlpha = k;
+      for (let i = -1; i <= 1; i++) {
+        const h = 7 + Math.sin(t * 18 + i * 2 + em.x) * 3;
+        ctx.fillStyle = '#ff7043';
+        ctx.beginPath();
+        ctx.moveTo(cx + i * 7 - 4, cy);
+        ctx.lineTo(cx + i * 7, cy - h);
+        ctx.lineTo(cx + i * 7 + 4, cy);
+        ctx.fill();
+        ctx.fillStyle = '#ffd54f';
+        ctx.fillRect(cx + i * 7 - 1, cy - h * 0.5, 2, h * 0.5);
+      }
+      ctx.globalAlpha = 1;
+    }
+    for (const v of sim.steam) {
+      const cx = v.x * TILE + TILE / 2;
+      const by = v.y * TILE + TILE - 4;
+      ctx.fillStyle = '#424242';
+      ctx.fillRect(cx - 10, by - 4, 20, 5);
+      ctx.fillStyle = v.state === 'idle' ? '#212121' : '#ff7043';
+      for (let i = -7; i <= 5; i += 4) ctx.fillRect(cx + i, by - 3, 2, 3);
+      if (v.state === 'warn') {
+        ctx.fillStyle = 'rgba(236,239,241,0.6)';
+        for (let i = 0; i < 3; i++) {
+          const k = (t * 3 + i / 3) % 1;
+          ctx.beginPath();
+          ctx.arc(cx + (i - 1) * 6, by - 6 - k * 10, 2 + k * 2, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      } else if (v.state === 'blast') {
+        const top = sim.steamTop(v) * TILE;
+        ctx.fillStyle = 'rgba(245,245,245,0.7)';
+        const wob = Math.sin(t * 40) * 2;
+        roundRect(ctx, cx - 11 - wob, top + 2, 22 + wob * 2, by - top - 2, 10);
+        ctx.fillStyle = 'rgba(255,255,255,0.9)';
+        ctx.fillRect(cx - 4, top + 6, 8, by - top - 10);
+      }
+    }
   }
 
   // Glowing mushrooms, spore vents and the spore clouds themselves.
@@ -684,6 +763,27 @@ export class Renderer {
       ctx.fillStyle = pal.feet;
       ctx.fillRect(-8, 8 + bob, 3, 3);
       ctx.fillRect(4, 8 + bob, 3, 3);
+    } else if (e.kind === 'magmite') {
+      // A slug of cooling rock with molten cracks.
+      const ooze = e.moving ? Math.sin(t * 10) * 1.5 : 0;
+      ctx.scale(flip * scale, scale);
+      ctx.fillStyle = infl ? lerpColor('#4e342e', '#ffccbc', infl) : '#4e342e';
+      ctx.beginPath();
+      ctx.ellipse(-1, 4, 13 + ooze, 7 - ooze * 0.4, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(7, -1, 6, 6, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#ff9800';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(-10, 4);
+      ctx.lineTo(-5, 1);
+      ctx.lineTo(-1, 6);
+      ctx.lineTo(4, 2);
+      ctx.stroke();
+      ctx.fillStyle = '#ffeb3b';
+      ctx.fillRect(8, -3, 3, 3);
     } else if (e.kind === 'sporeling') {
       // A walking mushroom with a spotted cap.
       const bob = e.moving ? Math.abs(Math.sin(t * 12)) * 2 : 0;
@@ -767,7 +867,7 @@ export class Renderer {
       // Puffling, Splitter, its Minis, and the boss (a crowned giant one).
       const squish = e.moving ? 1 + Math.sin(t * 12) * 0.06 : 1;
       ctx.scale(scale * squish, scale / squish);
-      const body = boss ? (e.frost ? '#81d4fa' : e.spores ? '#9c27b0' : ['#7e57c2', '#ab47bc', '#26a69a'][e.level - 1]) : KIND_COLOR[e.kind];
+      const body = boss ? (e.frost ? '#81d4fa' : e.spores ? '#9c27b0' : e.trail ? '#ff5722' : ['#7e57c2', '#ab47bc', '#26a69a'][e.level - 1]) : KIND_COLOR[e.kind];
       ctx.fillStyle = infl ? lerpColor(body, '#f1f8e9', infl * 0.8) : body;
       ctx.beginPath();
       ctx.arc(0, 1, 11, Math.PI, 0);
@@ -992,7 +1092,7 @@ export class Renderer {
     for (let y = 0; y < sim.rows; y++) {
       for (let x = 0; x < sim.cols; x++) {
         const t = sim.tile(x, y);
-        ctx.fillStyle = t === 0 ? '#1d1626' : t === T_BEDROCK ? '#5f5f6e' : t === T_ICE ? '#a7d8f0' : t === T_VINE ? '#4e7d3a' : sim.zone === 'frozen' ? '#8fb0c9' : sim.zone === 'fungal' ? '#3a3050' : '#6d4c41';
+        ctx.fillStyle = t === 0 ? '#1d1626' : t === T_BEDROCK ? '#5f5f6e' : t === T_ICE ? '#a7d8f0' : t === T_VINE ? '#4e7d3a' : t === T_LAVA ? '#ff6d00' : sim.zone === 'frozen' ? '#8fb0c9' : sim.zone === 'fungal' ? '#3a3050' : sim.zone === 'magma' ? '#55291f' : '#6d4c41';
         ctx.fillRect(ox + x * s, oy + y * s, s, s);
       }
     }

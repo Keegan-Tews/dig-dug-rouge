@@ -11,6 +11,7 @@ export const T_DIRT = 1;
 export const T_BEDROCK = 2;
 export const T_ICE = 3;
 export const T_VINE = 4;
+export const T_LAVA = 5;
 
 export const TOTAL_FLOORS = 20;
 export const BOSS_FLOORS = [7, 14, 20];
@@ -51,10 +52,17 @@ export const ZONES = {
     id: 'fungal', name: 'Fungal Grotto', act: 2, boss: 'Old Rootmaw',
     desc: 'Pitch dark except for glowing mushrooms. Spore clouds slow you down, and vines grow back over the tunnels you dig.',
   },
-  deep: { id: 'deep', name: 'The Deep', act: 3, boss: 'The Deep King' },
+  deep: {
+    id: 'deep', name: 'The Deep', act: 3, boss: 'The Deep King',
+    desc: 'The most bedrock and fire breathers yet. The classic way down.',
+  },
+  magma: {
+    id: 'magma', name: 'Magma Layer', act: 3, boss: 'The Slag Tyrant',
+    desc: 'Lava creeps into open tunnels, steam vents blast on a timer, and Magmites leave burning trails.',
+  },
 };
 
-export const ROUTES = { 2: ['bedrock', 'frozen', 'fungal'] };
+export const ROUTES = { 2: ['bedrock', 'frozen', 'fungal'], 3: ['deep', 'magma'] };
 const DEFAULT_ZONE = { 1: 'topsoil', 2: 'bedrock', 3: 'deep' };
 
 export function zoneFor(floor, route = {}) {

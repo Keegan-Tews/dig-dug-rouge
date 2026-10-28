@@ -1,4 +1,4 @@
-import { T_OPEN, T_DIRT, T_BEDROCK, T_ICE, T_VINE } from '../src/constants.js';
+import { T_OPEN, T_DIRT, T_BEDROCK, T_ICE, T_VINE, T_LAVA } from '../src/constants.js';
 import { difficulty } from '../src/levelgen.js';
 import { BASE_STATS } from '../src/upgrades.js';
 
@@ -6,6 +6,7 @@ import { BASE_STATS } from '../src/upgrades.js';
 // 'P' player, 'p' puffling, 's' scorchling, 'n' gnawler, 'v' splitter, 'k' shellback,
 // 'I' ice, 'i' icicle (on an open tile), 'C' chiller,
 // 'W' vines, 'O' spore vent (on an open tile), 'S' sporeling,
+// 'L' lava pool, 'T' steam vent (on an open tile), 'M' magmite,
 // 'B' boss, 'R' rock, 'g' gold, 'f' fossil, 'c' item cache (a bomb), 'h' gear chest.
 export function layoutFrom(lines, { floor = 1, seed = 1, zone = 'topsoil' } = {}) {
   const rows = lines.length;
@@ -16,6 +17,8 @@ export function layoutFrom(lines, { floor = 1, seed = 1, zone = 'topsoil' } = {}
   const items = [];
   const icicles = [];
   const vents = [];
+  const lava = [];
+  const steam = [];
   let start = { x: 0, y: 0 };
   lines.forEach((line, y) => {
     [...line].forEach((ch, x) => {
@@ -24,6 +27,9 @@ export function layoutFrom(lines, { floor = 1, seed = 1, zone = 'topsoil' } = {}
       if (ch === 'X') t = T_BEDROCK;
       if (ch === 'I') t = T_ICE;
       if (ch === 'W') t = T_VINE;
+      if (ch === 'L') { t = T_LAVA; lava.push({ x, y }); }
+      if (ch === 'T') steam.push({ x, y });
+      if (ch === 'M') enemies.push({ kind: 'magmite', x, y });
       if (ch === 'O') vents.push({ x, y });
       if (ch === 'S') enemies.push({ kind: 'sporeling', x, y });
       if (ch === 'i') icicles.push({ x, y });
@@ -43,7 +49,7 @@ export function layoutFrom(lines, { floor = 1, seed = 1, zone = 'topsoil' } = {}
       if (ch === 'f') items.push({ kind: 'fossil', x, y, value: 1 });
     });
   });
-  return { floor, seed, cols, rows, grid, start, enemies, rocks, items, icicles, vents, glows: [], zone, boss: 0, difficulty: difficulty(floor, zone) };
+  return { floor, seed, cols, rows, grid, start, enemies, rocks, items, icicles, vents, glows: [], lava, steam, zone, boss: 0, difficulty: difficulty(floor, zone) };
 }
 
 export function stats(overrides = {}) {
