@@ -27,6 +27,9 @@ export class Renderer {
     this.popups = [];
     this.particles = [];
     this.shake = 0;
+    this.flash = null; // { color, t, life } full-view tint that fades out
+    this.hitstop = 0; // seconds the game loop should hold the sim still
+    this.toast = null;
     this.cam = { x: 0, y: 0 };
     this.canvas.width = VIEW_COLS * TILE;
     this.canvas.height = VIEW_ROWS * TILE + HUD_H;
@@ -57,6 +60,19 @@ export class Renderer {
     this.cam.y += (ty - this.cam.y) * k;
   }
 
+  flashView(color, life = 0.25) {
+    this.flash = { color, t: 0, life };
+  }
+
+  // Freeze the action for a beat so big hits land. Longer stops win.
+  stop(seconds) {
+    this.hitstop = Math.max(this.hitstop, seconds);
+  }
+
+  showToast(text) {
+    this.toast = { text, t: 0 };
+  }
+
   addPopup(x, y, text, color = '#ffe066') {
     this.popups.push({ x, y, text, color, t: 0 });
   }
@@ -75,10 +91,20 @@ export class Renderer {
       if (ev.type === 'pop') {
         this.addPopup(ev.x, ev.y, `+${ev.amount}g`);
         this.burst(ev.x, ev.y, ev.kind === 'boss' ? '#ffd54f' : KIND_COLOR[ev.kind] || '#9ccc65', ev.kind === 'boss' ? 40 : 14);
-        if (ev.kind === 'boss') this.shake = 0.6;
+        if (ev.kind === 'boss') {
+          this.shake = 0.6;
+          this.stop(0.3);
+          this.flashView('255,255,255', 0.4);
+        } else {
+          this.shake = Math.max(this.shake, 0.08);
+          this.stop(0.05);
+        }
+      } else if (ev.type === 'pump') {
+        this.burst(ev.x, ev.y, '#e1f5fe', 2 + Math.round(ev.level * 3));
       } else if (ev.type === 'crush') {
         this.addPopup(ev.x, ev.y, `CRUSH x${ev.kills} +${ev.amount}g`, '#ffab40');
-        this.shake = 0.3;
+        this.shake = 0.3 + 0.1 * Math.min(3, ev.kills - 1);
+        this.stop(0.06 + 0.03 * Math.min(3, ev.kills));
       } else if (ev.type === 'rock') {
         this.burst(ev.x, ev.y + 0.3, '#9e9e9e', 8);
         this.shake = Math.max(this.shake, 0.15);
@@ -93,6 +119,8 @@ export class Renderer {
       } else if (ev.type === 'shield') {
         this.addPopup(this.lastPlayer?.x ?? 7, this.lastPlayer?.y ?? 8, 'BLOCKED', '#4fc3f7');
         this.shake = 0.2;
+        this.stop(0.1);
+        this.flashView('79,195,247', 0.3);
       } else if (ev.type === 'gear') {
         this.addPopup(ev.x, ev.y, `+${GEAR_BY_ID[ev.gear].name}`, '#ffd54f');
         this.burst(ev.x, ev.y, '#ffd54f', 16);
@@ -104,6 +132,7 @@ export class Renderer {
         this.burst(ev.x, ev.y, '#ffb74d', 30);
         this.burst(ev.x, ev.y, '#757575', 14);
         this.shake = Math.max(this.shake, 0.45);
+        this.flashView('255,183,77', 0.2);
       } else if (ev.type === 'use' && ev.item === 'frost') {
         this.burst(ev.x, ev.y, '#b3e5fc', 24);
       } else if (ev.type === 'chill') {
@@ -125,8 +154,14 @@ export class Renderer {
         this.addPopup(ev.x, ev.y, 'SPLIT!', '#f48fb1');
       } else if (ev.type === 'hurt') {
         this.shake = 0.3;
+        this.stop(0.15);
+        this.flashView('239,83,80', 0.4);
       } else if (ev.type === 'death') {
         this.shake = 0.5;
+        this.stop(0.35);
+        this.flashView('239,83,80', 0.6);
+      } else if (ev.type === 'cleared') {
+        this.flashView('255,213,79', 0.35);
       }
     }
   }
@@ -142,6 +177,14 @@ export class Renderer {
     }
     this.particles = this.particles.filter((p) => p.t < p.life);
     if (this.shake > 0) this.shake = Math.max(0, this.shake - dt);
+    if (this.flash) {
+      this.flash.t += dt;
+      if (this.flash.t >= this.flash.life) this.flash = null;
+    }
+    if (this.toast) {
+      this.toast.t += dt;
+      if (this.toast.t >= 1.4) this.toast = null;
+    }
   }
 
   draw(sim, run, view = {}) {
@@ -151,7 +194,7 @@ export class Renderer {
     ctx.save();
     ctx.fillStyle = '#0b0910';
     ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-    this.drawHud(sim, run);
+    if (!view.backdrop) this.drawHud(sim, run);
 
     ctx.translate(0, HUD_H);
     ctx.save();
@@ -193,10 +236,40 @@ export class Renderer {
       ctx.fillStyle = 'rgba(120,180,255,0.08)';
       ctx.fillRect(0, 0, this.viewW, this.viewH);
     }
-    if (sim.cols > VIEW_COLS || sim.rows > VIEW_ROWS) this.drawMinimap(sim);
-    this.drawPack(sim);
+    if (this.flash) {
+      ctx.fillStyle = `rgba(${this.flash.color},${0.45 * (1 - this.flash.t / this.flash.life)})`;
+      ctx.fillRect(0, 0, this.viewW, this.viewH);
+    }
+    if (!view.backdrop) {
+      if (sim.cols > VIEW_COLS || sim.rows > VIEW_ROWS) this.drawMinimap(sim);
+      this.drawPack(sim);
+    }
     if (view.banner) this.drawBanner(sim, view.banner);
+    // Fade to black as a floor ends, and back in as the next one starts.
+    let fade = 0;
+    if (sim.status === 'dying' || sim.status === 'clearing') fade = 0.7 * Math.max(0, 1 - sim.statusTimer / 0.4);
+    else if (sim.status !== 'playing') fade = 0.7;
+    if (view.banner && view.banner.max) fade = Math.max(fade, (view.banner.t - (view.banner.max - 0.3)) / 0.3);
+    if (fade > 0) {
+      ctx.fillStyle = `rgba(11,9,16,${Math.min(1, fade)})`;
+      ctx.fillRect(0, 0, this.viewW, this.viewH);
+    }
+    if (this.toast) this.drawToast();
     ctx.restore();
+  }
+
+  drawToast() {
+    const ctx = this.ctx;
+    ctx.globalAlpha = Math.min(1, (1.4 - this.toast.t) / 0.3);
+    ctx.font = '10px "Press Start 2P", ui-monospace, monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const w = ctx.measureText(this.toast.text).width + 24;
+    ctx.fillStyle = 'rgba(10,8,14,0.85)';
+    ctx.fillRect(this.viewW / 2 - w / 2, this.viewH - 64, w, 26);
+    ctx.fillStyle = '#f5e6c8';
+    ctx.fillText(this.toast.text, this.viewW / 2, this.viewH - 51);
+    ctx.globalAlpha = 1;
   }
 
   drawHud(sim, run) {
@@ -1071,10 +1144,16 @@ export class Renderer {
       ctx.globalAlpha = 1 - p.t / 1.1;
       const x = p.x * TILE + TILE / 2;
       const y = p.y * TILE + TILE / 2 - 10 - p.t * 24;
+      // Pop in a little oversized, then settle.
+      const k = p.t < 0.12 ? 1 + (1 - p.t / 0.12) * 0.6 : 1;
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.scale(k, k);
       ctx.fillStyle = '#000';
-      ctx.fillText(p.text, x + 1, y + 1);
+      ctx.fillText(p.text, 1, 1);
       ctx.fillStyle = p.color;
-      ctx.fillText(p.text, x, y);
+      ctx.fillText(p.text, 0, 0);
+      ctx.restore();
     }
     ctx.globalAlpha = 1;
   }

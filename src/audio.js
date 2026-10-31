@@ -35,20 +35,63 @@ const SOUNDS = {
   spawn: { type: 'sine', f: [200, 400], d: 0.2, v: 0.05 },
 };
 
+// Impacts get a burst of filtered noise on top of the tone so they thump.
+const NOISE = {
+  boom: { d: 0.6, v: 0.35, cut: 900 },
+  crush: { d: 0.35, v: 0.25, cut: 600 },
+  rock: { d: 0.18, v: 0.15, cut: 500 },
+  hurt: { d: 0.2, v: 0.18, cut: 2000 },
+  death: { d: 0.5, v: 0.2, cut: 1200 },
+  pop: { d: 0.08, v: 0.12, cut: 3000 },
+  shatter: { d: 0.2, v: 0.1, cut: 5000 },
+};
+
+const SETTINGS_KEY = 'tunnelpop_audio';
+
 export class Sfx {
-  constructor() {
+  constructor(storage = null) {
     this.ctx = null;
+    this.master = null;
+    this.noise = null;
+    this.storage = storage;
     this.muted = false;
     this.lastDig = 0;
+    try {
+      this.muted = JSON.parse(storage?.getItem(SETTINGS_KEY) || '{}').muted === true;
+    } catch {
+      this.muted = false;
+    }
   }
 
   unlock() {
-    if (this.ctx) return;
+    if (this.ctx) {
+      if (this.ctx.state === 'suspended') this.ctx.resume();
+      return;
+    }
     const AC = window.AudioContext || window.webkitAudioContext;
-    if (AC) this.ctx = new AC();
+    if (!AC) return;
+    this.ctx = new AC();
+    this.master = this.ctx.createGain();
+    this.master.gain.value = 0.9;
+    this.master.connect(this.ctx.destination);
+    const len = Math.floor(this.ctx.sampleRate * 0.6);
+    this.noise = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
+    const data = this.noise.getChannelData(0);
+    for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
   }
 
-  play(name) {
+  toggleMute() {
+    this.muted = !this.muted;
+    try {
+      this.storage?.setItem(SETTINGS_KEY, JSON.stringify({ muted: this.muted }));
+    } catch {
+      // Storage can be unavailable (private mode); the toggle still works for this session.
+    }
+    return this.muted;
+  }
+
+  // `pitch` scales the sound's frequencies, e.g. to climb with each pump.
+  play(name, pitch = 1) {
     if (this.muted || !this.ctx) return;
     const s = SOUNDS[name];
     if (!s) return;
@@ -60,12 +103,27 @@ export class Sfx {
     const osc = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
     osc.type = s.type;
-    osc.frequency.setValueAtTime(s.f[0], now);
-    osc.frequency.exponentialRampToValueAtTime(s.f[1], now + s.d);
+    osc.frequency.setValueAtTime(s.f[0] * pitch, now);
+    osc.frequency.exponentialRampToValueAtTime(s.f[1] * pitch, now + s.d);
     gain.gain.setValueAtTime(s.v, now);
     gain.gain.exponentialRampToValueAtTime(0.0001, now + s.d);
-    osc.connect(gain).connect(this.ctx.destination);
+    osc.connect(gain).connect(this.master);
     osc.start(now);
     osc.stop(now + s.d + 0.02);
+    const n = NOISE[name];
+    if (n && this.noise) {
+      const src = this.ctx.createBufferSource();
+      src.buffer = this.noise;
+      const filter = this.ctx.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.frequency.setValueAtTime(n.cut, now);
+      filter.frequency.exponentialRampToValueAtTime(80, now + n.d);
+      const ng = this.ctx.createGain();
+      ng.gain.setValueAtTime(n.v, now);
+      ng.gain.exponentialRampToValueAtTime(0.0001, now + n.d);
+      src.connect(filter).connect(ng).connect(this.master);
+      src.start(now);
+      src.stop(now + n.d + 0.02);
+    }
   }
 }

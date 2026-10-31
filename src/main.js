@@ -21,13 +21,15 @@ import {
 } from './run.js';
 
 const STEP = 1 / 120;
+// Scenes drawn over the idle backdrop floor, which has no HUD.
+const MENU_SCENES = ['title', 'help', 'vault', 'classes'];
 
 const canvas = document.getElementById('screen');
 const overlay = document.getElementById('overlay');
 const renderer = new Renderer(canvas);
 const input = new Input(window);
-const sfx = new Sfx();
 const storage = (() => { try { return window.localStorage; } catch { return null; } })();
+const sfx = new Sfx(storage);
 
 const state = {
   meta: loadMeta(storage),
@@ -186,7 +188,10 @@ function startFloor() {
     sub: boss ? `Boss of ${zone.name}` : `Act ${act.num}: ${zone.name}`,
     color: boss ? '#ef5350' : '#ffd54f',
     t: 1.6,
+    max: 1.6,
   };
+  renderer.flash = null;
+  renderer.hitstop = 0;
   state.scene = 'play';
   state.paused = false;
   input.reset();
@@ -329,8 +334,10 @@ function showPause() {
   el(`
     <div class="panel">
       <h2>Paused</h2>
+      <p class="small dim">Move: arrows/WASD &middot; Pump: Space &middot; Item: E &middot; Switch: Q</p>
       <div class="buttons">
         <button data-action="resume">Resume</button>
+        <button data-action="mute" class="ghost">Sound: ${sfx.muted ? 'off' : 'on'}</button>
         <button data-action="abandon" class="ghost">Abandon run</button>
       </div>
     </div>`);
@@ -370,6 +377,12 @@ function resume() {
   hideOverlay();
 }
 
+function toggleMute() {
+  const muted = sfx.toggleMute();
+  renderer.showToast(muted ? 'Sound off (M)' : 'Sound on (M)');
+  if (!muted) sfx.play('select');
+}
+
 // ---- actions ----
 
 const actions = {
@@ -379,6 +392,10 @@ const actions = {
   help: showHelp,
   vault: showVault,
   resume,
+  mute: () => {
+    toggleMute();
+    showPause();
+  },
   tipdone: () => {
     if (state.tip && !state.meta.seen.includes(state.tip)) {
       state.meta.seen.push(state.tip);
@@ -442,7 +459,8 @@ overlay.addEventListener('click', (e) => {
 
 input.onPress((code) => {
   if (code === 'KeyM') {
-    sfx.muted = !sfx.muted;
+    toggleMute();
+    if (state.paused && !state.tip && state.scene === 'play') showPause();
     return;
   }
   if (state.tip && code === 'Escape') {
@@ -484,6 +502,9 @@ function frame(now) {
     if (state.banner) {
       state.banner.t -= dt;
       if (state.banner.t <= 0) state.banner = null;
+    } else if (renderer.hitstop > 0) {
+      // Hold the action still for a beat; effects keep animating.
+      renderer.hitstop = Math.max(0, renderer.hitstop - dt);
     } else {
       acc += dt;
       while (acc >= STEP) {
@@ -494,12 +515,13 @@ function frame(now) {
         for (const ev of events) {
           // Vents and lava act all over the map; only hear the nearby ones.
           if (['spore', 'lava', 'hiss', 'steam'].includes(ev.type) && Math.hypot(ev.x - p.x, ev.y - p.y) > 6) continue;
-          sfx.play(ev.type);
+          // Each pump climbs in pitch as the foe swells.
+          sfx.play(ev.type, ev.type === 'pump' ? 1 + (ev.level || 0) * 0.8 : 1);
           if (ev.type === 'item') queueTip('item', ev.item);
           if (ev.type === 'gear') queueTip('gear', ev.gear);
         }
         acc -= STEP;
-        if (state.tips.length) break;
+        if (state.tips.length || renderer.hitstop > 0) break;
       }
       if (state.tips.length) showTip();
     }
@@ -510,7 +532,7 @@ function frame(now) {
   } else {
     acc = 0;
   }
-  if (state.sim && state.run) renderer.draw(state.sim, state.run, { banner: state.banner });
+  if (state.sim && state.run) renderer.draw(state.sim, state.run, { banner: state.banner, backdrop: MENU_SCENES.includes(state.scene) });
   requestAnimationFrame(frame);
 }
 
