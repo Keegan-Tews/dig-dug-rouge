@@ -92,19 +92,19 @@ export class Renderer {
         this.addPopup(ev.x, ev.y, `+${ev.amount}g`);
         this.burst(ev.x, ev.y, ev.kind === 'boss' ? '#ffd54f' : KIND_COLOR[ev.kind] || '#9ccc65', ev.kind === 'boss' ? 40 : 14);
         if (ev.kind === 'boss') {
-          this.shake = 0.6;
-          this.stop(0.3);
+          this.shake = 0.7;
+          this.stop(0.4);
           this.flashView('255,255,255', 0.4);
         } else {
           this.shake = Math.max(this.shake, 0.08);
-          this.stop(0.05);
         }
       } else if (ev.type === 'pump') {
         this.burst(ev.x, ev.y, '#e1f5fe', 2 + Math.round(ev.level * 3));
       } else if (ev.type === 'crush') {
         this.addPopup(ev.x, ev.y, `CRUSH x${ev.kills} +${ev.amount}g`, '#ffab40');
         this.shake = 0.3 + 0.1 * Math.min(3, ev.kills - 1);
-        this.stop(0.06 + 0.03 * Math.min(3, ev.kills));
+        // Only multi-kills are big enough to stop the action.
+        if (ev.kills > 1) this.stop(0.08 + 0.04 * Math.min(3, ev.kills));
       } else if (ev.type === 'rock') {
         this.burst(ev.x, ev.y + 0.3, '#9e9e9e', 8);
         this.shake = Math.max(this.shake, 0.15);
@@ -119,7 +119,7 @@ export class Renderer {
       } else if (ev.type === 'shield') {
         this.addPopup(this.lastPlayer?.x ?? 7, this.lastPlayer?.y ?? 8, 'BLOCKED', '#4fc3f7');
         this.shake = 0.2;
-        this.stop(0.1);
+        this.stop(0.15);
         this.flashView('79,195,247', 0.3);
       } else if (ev.type === 'gear') {
         this.addPopup(ev.x, ev.y, `+${GEAR_BY_ID[ev.gear].name}`, '#ffd54f');
@@ -154,11 +154,11 @@ export class Renderer {
         this.addPopup(ev.x, ev.y, 'SPLIT!', '#f48fb1');
       } else if (ev.type === 'hurt') {
         this.shake = 0.3;
-        this.stop(0.15);
+        this.stop(0.2);
         this.flashView('239,83,80', 0.4);
       } else if (ev.type === 'death') {
         this.shake = 0.5;
-        this.stop(0.35);
+        this.stop(0.45);
         this.flashView('239,83,80', 0.6);
       } else if (ev.type === 'cleared') {
         this.flashView('255,213,79', 0.35);
