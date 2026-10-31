@@ -462,6 +462,7 @@ export class FloorSim {
           h.len = l;
           h.state = 'attached';
           h.target = hit;
+          this.emit('latch', { x: hit.x, y: hit.y });
           this.pump(hit);
           return;
         }
@@ -684,6 +685,7 @@ export class FloorSim {
           if (e.deflateTimer <= 0) {
             e.inflation -= 1;
             e.deflateTimer = this.stats.deflateDelay * (e.kind === 'boss' ? 1.5 : 1);
+            this.emit('deflate', { x: e.x, y: e.y, level: e.inflation / e.popAt });
             if (e.inflation <= 0) {
               e.inflation = 0;
               this.recover(e);

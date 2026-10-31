@@ -3,7 +3,9 @@
 const SOUNDS = {
   dig: { type: 'square', f: [120, 90], d: 0.04, v: 0.03 },
   hose: { type: 'sawtooth', f: [500, 900], d: 0.08, v: 0.04 },
-  pump: { type: 'square', f: [300, 520], d: 0.07, v: 0.06 },
+  pump: { type: 'square', f: [220, 440], d: 0.09, v: 0.06 },
+  latch: { type: 'triangle', f: [180, 90], d: 0.08, v: 0.1 },
+  deflate: { type: 'triangle', f: [420, 160], d: 0.35, v: 0.05 },
   pop: { type: 'triangle', f: [900, 180], d: 0.18, v: 0.12 },
   crush: { type: 'sawtooth', f: [140, 40], d: 0.3, v: 0.12 },
   rock: { type: 'triangle', f: [90, 50], d: 0.2, v: 0.1 },
@@ -79,7 +81,58 @@ export class Sfx {
     this.onReady?.();
   }
 
-  // `pitch` scales the sound's frequencies, e.g. to climb with each pump.
+  // A pump is three layers: a rubbery tone that climbs with the swelling,
+  // a puff of air, and a stretchy squeak once the foe is nearly full.
+  pump(level) {
+    if (this.muted || !this.ctx) return;
+    this.play('pump', 1 + level * 0.9);
+    const now = this.ctx.currentTime;
+    this.air(now, 600 + level * 1400, 2600 + level * 2400, 0.12, 0.09);
+    if (level >= 0.55) {
+      const osc = this.ctx.createOscillator();
+      const g = this.ctx.createGain();
+      osc.type = 'sine';
+      const f = 900 + level * 900;
+      osc.frequency.setValueAtTime(f, now + 0.03);
+      osc.frequency.linearRampToValueAtTime(f * 1.25, now + 0.08);
+      osc.frequency.linearRampToValueAtTime(f * 0.95, now + 0.14);
+      g.gain.setValueAtTime(0.0001, now);
+      g.gain.exponentialRampToValueAtTime(0.03 + level * 0.03, now + 0.05);
+      g.gain.exponentialRampToValueAtTime(0.0001, now + 0.16);
+      osc.connect(g).connect(this.master);
+      osc.start(now);
+      osc.stop(now + 0.18);
+    }
+  }
+
+  // The foe sags a notch: a falling tone and a soft leak of air.
+  deflate(level) {
+    if (this.muted || !this.ctx) return;
+    this.play('deflate', 0.8 + level * 0.6);
+    const now = this.ctx.currentTime;
+    this.air(now, 2200, 500, 0.3, 0.05);
+  }
+
+  // A band-passed puff of noise sweeping between two frequencies.
+  air(now, from, to, dur, vol) {
+    if (!this.noise) return;
+    const src = this.ctx.createBufferSource();
+    src.buffer = this.noise;
+    const f = this.ctx.createBiquadFilter();
+    f.type = 'bandpass';
+    f.Q.value = 1.4;
+    f.frequency.setValueAtTime(from, now);
+    f.frequency.exponentialRampToValueAtTime(to, now + dur);
+    const g = this.ctx.createGain();
+    g.gain.setValueAtTime(0.0001, now);
+    g.gain.exponentialRampToValueAtTime(vol, now + dur * 0.25);
+    g.gain.exponentialRampToValueAtTime(0.0001, now + dur);
+    src.connect(f).connect(g).connect(this.master);
+    src.start(now, Math.random() * 0.2);
+    src.stop(now + dur + 0.02);
+  }
+
+  // `pitch` scales the sound's frequencies.
   play(name, pitch = 1) {
     if (this.muted || !this.ctx) return;
     const s = SOUNDS[name];

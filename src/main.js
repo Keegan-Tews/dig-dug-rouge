@@ -28,6 +28,7 @@ const MENU_SCENES = ['title', 'help', 'vault', 'classes', 'settings'];
 
 const canvas = document.getElementById('screen');
 const overlay = document.getElementById('overlay');
+const curtain = document.getElementById('curtain');
 const renderer = new Renderer(canvas);
 const input = new Input(window);
 const storage = (() => { try { return window.localStorage; } catch { return null; } })();
@@ -65,6 +66,20 @@ function el(html) {
   if (wasOpen) overlay.querySelector('.panel')?.classList.add('still');
   const first = overlay.querySelector('button:not([disabled])');
   if (first) first.focus({ preventScroll: true });
+}
+
+const CURTAIN_MS = 250;
+
+// Fade the screen to black, switch scenes behind it, then fade back in.
+function fadeTo(fn) {
+  if (state.fading) return;
+  state.fading = true;
+  curtain.classList.add('on');
+  setTimeout(() => {
+    fn();
+    curtain.classList.remove('on');
+    state.fading = false;
+  }, CURTAIN_MS);
 }
 
 function hideOverlay() {
@@ -455,12 +470,18 @@ function musicFor() {
   return runZone(state.run).id;
 }
 
+// Leaving a finished run fades out; moving between menus doesn't.
+function fromEnd(show) {
+  if (state.scene === 'gameover' || state.scene === 'victory') fadeTo(show);
+  else show();
+}
+
 // ---- actions ----
 
 const actions = {
-  start: showClasses,
-  choose: (b) => startRun(b.dataset.id),
-  title: showTitle,
+  start: () => fromEnd(showClasses),
+  choose: (b) => fadeTo(() => startRun(b.dataset.id)),
+  title: () => fromEnd(showTitle),
   help: showHelp,
   vault: showVault,
   resume,
@@ -488,7 +509,7 @@ const actions = {
   },
   abandon: () => {
     state.paused = false;
-    showEnd(false);
+    fadeTo(() => showEnd(false));
   },
   perk: (b) => {
     if (buyPerk(state.meta, b.dataset.id)) {
@@ -507,9 +528,9 @@ const actions = {
   pick: (b) => {
     applyUpgrade(state.run, b.dataset.id);
     sfx.play('select');
-    nextScreen();
+    fadeTo(nextScreen);
   },
-  skip: () => nextScreen(),
+  skip: () => fadeTo(nextScreen),
   buy: (b) => {
     if (buyShopItem(state.run, state.shop[Number(b.dataset.index)])) sfx.play('buy');
     showShop(false);
@@ -522,24 +543,29 @@ const actions = {
     state.shop = shopStock(run, rngFor(run, 'shop', state.rerolls));
     showShop(false);
   },
-  continue: () => nextScreen(),
+  continue: () => fadeTo(nextScreen),
   route: (b) => {
     if (chooseRoute(state.run, b.dataset.id)) {
       sfx.play('select');
-      nextScreen();
+      fadeTo(nextScreen);
     }
   },
 };
 
 overlay.addEventListener('click', (e) => {
   const b = e.target.closest('[data-action]');
-  if (!b || b.disabled) return;
+  if (!b || b.disabled || state.fading) return;
   sfx.unlock();
   actions[b.dataset.action]?.(b);
 });
 
 // Menus: arrow keys move between buttons, Space or Enter presses one.
 window.addEventListener('keydown', (e) => {
+  if (state.fading && e.code !== 'KeyM') {
+    e.preventDefault();
+    e.stopPropagation();
+    return;
+  }
   if (overlay.hidden) return;
   const buttons = [...overlay.querySelectorAll('button:not([disabled])')];
   if (!buttons.length) return;
@@ -588,7 +614,7 @@ input.onPress((code) => {
   }
   if (state.scene === 'classes' && /^Digit[1-4]$/.test(code)) {
     const c = CLASSES[Number(code.slice(5)) - 1];
-    if (c && classUnlocked(c, state.meta.unlocked)) startRun(c.id);
+    if (c && classUnlocked(c, state.meta.unlocked)) actions.choose({ dataset: { id: c.id } });
     return;
   }
   if (state.scene === 'title' && code === 'Enter') showClasses();
@@ -621,8 +647,9 @@ function frame(now) {
         for (const ev of events) {
           // Vents and lava act all over the map; only hear the nearby ones.
           if (['spore', 'lava', 'hiss', 'steam'].includes(ev.type) && Math.hypot(ev.x - p.x, ev.y - p.y) > 6) continue;
-          // Each pump climbs in pitch as the foe swells.
-          sfx.play(ev.type, ev.type === 'pump' ? 1 + (ev.level || 0) * 0.8 : 1);
+          if (ev.type === 'pump') sfx.pump(ev.level || 0);
+          else if (ev.type === 'deflate') sfx.deflate(ev.level || 0);
+          else sfx.play(ev.type);
           if (ev.type === 'item') queueTip('item', ev.item);
           if (ev.type === 'gear') queueTip('gear', ev.gear);
         }
@@ -633,8 +660,8 @@ function frame(now) {
     }
     renderer.step(dt);
     renderer.updateCamera(state.sim, dt);
-    if (state.sim.status === 'cleared') floorCleared();
-    else if (state.sim.status === 'dead') showEnd(false);
+    if (state.sim.status === 'cleared') fadeTo(floorCleared);
+    else if (state.sim.status === 'dead') fadeTo(() => showEnd(false));
   } else {
     acc = 0;
   }

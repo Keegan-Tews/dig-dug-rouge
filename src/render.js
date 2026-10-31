@@ -114,6 +114,10 @@ export class Renderer {
         } else {
           this.shake = Math.max(this.shake, 0.08);
         }
+      } else if (ev.type === 'latch') {
+        this.ring(ev.x, ev.y, '#4fc3f7', 0.6, 0.2);
+      } else if (ev.type === 'deflate') {
+        this.burst(ev.x, ev.y - 0.3, '#cfd8dc', 3);
       } else if (ev.type === 'pump') {
         this.burst(ev.x, ev.y, '#e1f5fe', 2 + Math.round(ev.level * 3));
       } else if (ev.type === 'crush') {
@@ -323,9 +327,9 @@ export class Renderer {
     if (view.banner) this.drawBanner(sim, view.banner);
     // Fade to black as a floor ends, and back in as the next one starts.
     let fade = 0;
-    if (sim.status === 'dying' || sim.status === 'clearing') fade = 0.7 * Math.max(0, 1 - sim.statusTimer / 0.4);
+    if (sim.status === 'dying' || sim.status === 'clearing') fade = 0.7 * Math.max(0, 1 - sim.statusTimer / 0.8);
     else if (sim.status !== 'playing') fade = 0.7;
-    if (view.banner && view.banner.max) fade = Math.max(fade, (view.banner.t - (view.banner.max - 0.3)) / 0.3);
+    if (view.banner && view.banner.max) fade = Math.max(fade, (view.banner.t - (view.banner.max - 0.6)) / 0.6);
     if (fade > 0) {
       ctx.fillStyle = `rgba(11,9,16,${Math.min(1, fade)})`;
       ctx.fillRect(0, 0, this.viewW, this.viewH);

@@ -76,6 +76,26 @@ test('inflated enemies deflate and recover if left alone', () => {
   assert.notEqual(sim.enemies[0].state, 'inflated');
 });
 
+test('the hose latching on, pumping and deflating each emit a sound event', () => {
+  const sim = new FloorSim(layoutFrom([
+    '#########',
+    'P..p.####',
+    '#########',
+  ]), stats());
+  sim.freeze = 99;
+  sim.update(1 / 120, { pumpPressed: true });
+  run(sim, 0.2);
+  const pumped = sim.drainEvents().map((e) => e.type);
+  assert.ok(pumped.includes('latch'));
+  assert.ok(pumped.includes('pump'));
+  sim.freeze = 0;
+  sim.hose = null;
+  run(sim, 1.0);
+  const deflate = sim.drainEvents().find((e) => e.type === 'deflate');
+  assert.ok(deflate);
+  assert.ok(deflate.level >= 0 && deflate.level < 1);
+});
+
 test('touching an enemy with one heart kills the player', () => {
   const sim = new FloorSim(layoutFrom([
     '#######',

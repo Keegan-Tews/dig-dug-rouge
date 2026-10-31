@@ -54,6 +54,17 @@ body {
 }
 #overlay[hidden] { display: none; }
 
+/* Black curtain that fades over the screen between scenes. */
+#curtain {
+  position: absolute;
+  inset: 0;
+  background: var(--bg);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease-in;
+}
+#curtain.on { opacity: 1; pointer-events: auto; transition-timing-function: ease-out; }
+
 .panel {
   width: 100%;
   max-height: 100%;

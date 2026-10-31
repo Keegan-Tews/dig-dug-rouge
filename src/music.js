@@ -74,6 +74,9 @@ export function parseTrack(track) {
   };
 }
 
+const FADE_OUT = 0.8;
+const FADE_IN = 0.6;
+
 const midiHz = (m) => 440 * 2 ** ((m - 69) / 12);
 
 export class Music {
@@ -101,28 +104,38 @@ export class Music {
     this.start();
   }
 
+  // Crossfade: the old track's notes ring out through its own fading gain
+  // while the new track fades in on a fresh one.
   start() {
     if (!this.ctx) return;
-    if (!this.out) {
-      this.out = this.ctx.createGain();
-      this.out.gain.value = 0;
-      this.out.connect(this.sfx.master);
+    const now = this.ctx.currentTime;
+    if (this.out) {
+      const old = this.out;
+      old.gain.cancelScheduledValues(now);
+      old.gain.setValueAtTime(old.gain.value, now);
+      old.gain.linearRampToValueAtTime(0, now + FADE_OUT);
+      setTimeout(() => old.disconnect(), (FADE_OUT + 0.3) * 1000);
     }
+    this.out = this.ctx.createGain();
+    this.out.gain.value = 0;
+    this.out.connect(this.sfx.master);
     const id = this.trackId;
     this.track = id ? (this.parsed[id] ||= parseTrack(TRACKS[id])) : null;
     this.step = 0;
-    this.nextTime = this.ctx.currentTime + 0.06;
-    this.applyVolume();
+    // Let the old track fade a little before the new one comes in.
+    this.nextTime = now + (this.started ? FADE_OUT * 0.6 : 0.06);
+    this.started = true;
+    this.applyVolume(this.nextTime - now);
     if (!this.timer) this.timer = setInterval(() => this.tick(), 25);
   }
 
-  applyVolume() {
+  applyVolume(delay = 0) {
     if (!this.out) return;
     const now = this.ctx.currentTime;
     const v = this.settings.music && this.track ? 0.32 : 0;
     this.out.gain.cancelScheduledValues(now);
-    this.out.gain.setValueAtTime(this.out.gain.value, now);
-    this.out.gain.linearRampToValueAtTime(v, now + 0.3);
+    this.out.gain.setValueAtTime(this.out.gain.value, now + delay);
+    this.out.gain.linearRampToValueAtTime(v, now + delay + FADE_IN);
   }
 
   tick() {
