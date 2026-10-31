@@ -16,6 +16,13 @@ const DIRT_FUNGAL = [null, ['#3f4a3a', '#34402f'], ['#3a3d4c', '#2f3240'], ['#3a
 const DIRT_MAGMA = [null, ['#5a3a30', '#4a2c24'], ['#55291f', '#441f17'], ['#4d1d15', '#3c140e'], ['#3a120c', '#2a0b07']];
 const DIRT_ACT3 = [null, ['#6b5b8a', '#584a74'], ['#4f4a7d', '#3f3b66'], ['#3d3a66', '#302d52'], ['#2a2847', '#201e38']];
 const TUNNEL = '#120d16';
+// Drifting particles per area: count on screen, fall speed (px/s), sway, size range.
+const AMBIENT = {
+  default: { count: 14, vy: -4, sway: 6, size: [1, 2], colors: ['#d7ccc8', '#bcaaa4'] },
+  frozen: { count: 40, vy: 22, sway: 14, size: [2, 3], colors: ['#ffffff', '#e1f5fe'] },
+  fungal: { count: 26, vy: -8, sway: 10, size: [2, 3], colors: ['#ce93d8', '#80cbc4', '#b39ddb'] },
+  magma: { count: 30, vy: -26, sway: 10, size: [1, 3], colors: ['#ff8a50', '#ffb74d', '#ff5722'] },
+};
 const KIND_COLOR = {
   puff: '#7cb342', scorch: '#ff7043', chiller: '#4fc3f7', sporeling: '#ce93d8', magmite: '#ff8a50', gnawler: '#8d6e63', splitter: '#ba68c8', mini: '#f48fb1', shellback: '#26a69a',
 };
@@ -26,6 +33,9 @@ export class Renderer {
     this.ctx = canvas.getContext('2d');
     this.popups = [];
     this.particles = [];
+    this.rings = []; // expanding shockwave circles
+    this.ambient = []; // drifting snow / spores / embers / dust, in view space
+    this.vignette = null;
     this.shake = 0;
     this.flash = null; // { color, t, life } full-view tint that fades out
     this.hitstop = 0; // seconds the game loop should hold the sim still
@@ -81,8 +91,13 @@ export class Renderer {
     for (let i = 0; i < n; i++) {
       const a = Math.random() * Math.PI * 2;
       const s = 1.5 + Math.random() * 3;
-      this.particles.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 1, t: 0, life: 0.5 + Math.random() * 0.3, color });
+      const size = 2 + Math.floor(Math.random() * 4);
+      this.particles.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 1, t: 0, life: 0.5 + Math.random() * 0.3, color, size });
     }
+  }
+
+  ring(x, y, color, radius = 1.2, life = 0.35) {
+    this.rings.push({ x, y, color, radius, life, t: 0 });
   }
 
   // React to sim events with juice.
@@ -91,6 +106,7 @@ export class Renderer {
       if (ev.type === 'pop') {
         this.addPopup(ev.x, ev.y, `+${ev.amount}g`);
         this.burst(ev.x, ev.y, ev.kind === 'boss' ? '#ffd54f' : KIND_COLOR[ev.kind] || '#9ccc65', ev.kind === 'boss' ? 40 : 14);
+        this.ring(ev.x, ev.y, '#ffffff', ev.kind === 'boss' ? 4 : 1.3, ev.kind === 'boss' ? 0.6 : 0.3);
         if (ev.kind === 'boss') {
           this.shake = 0.7;
           this.stop(0.4);
@@ -131,6 +147,7 @@ export class Renderer {
       } else if (ev.type === 'boom') {
         this.burst(ev.x, ev.y, '#ffb74d', 30);
         this.burst(ev.x, ev.y, '#757575', 14);
+        this.ring(ev.x, ev.y, '#ffb74d', 2.5, 0.4);
         this.shake = Math.max(this.shake, 0.45);
         this.flashView('255,183,77', 0.2);
       } else if (ev.type === 'use' && ev.item === 'frost') {
@@ -176,6 +193,9 @@ export class Renderer {
       p.vy += 6 * dt;
     }
     this.particles = this.particles.filter((p) => p.t < p.life);
+    for (const r of this.rings) r.t += dt;
+    this.rings = this.rings.filter((r) => r.t < r.life);
+    this.stepAmbient(dt);
     if (this.shake > 0) this.shake = Math.max(0, this.shake - dt);
     if (this.flash) {
       this.flash.t += dt;
@@ -185,6 +205,60 @@ export class Renderer {
       this.toast.t += dt;
       if (this.toast.t >= 1.4) this.toast = null;
     }
+  }
+
+  // Each area gets its own drifting backdrop particles.
+  stepAmbient(dt) {
+    const zone = this.sim?.zone;
+    const style = AMBIENT[zone] || AMBIENT.default;
+    for (const a of this.ambient) {
+      a.t += dt;
+      a.x += (a.vx + Math.sin(a.t * a.wob) * style.sway) * dt;
+      a.y += a.vy * dt;
+    }
+    this.ambient = this.ambient.filter((a) => a.t < a.life && a.y > -10 && a.y < this.viewH + 10);
+    if (this.ambient.length < style.count && Math.random() < dt * style.count) {
+      const fromTop = style.vy > 0;
+      this.ambient.push({
+        x: Math.random() * this.viewW,
+        y: fromTop ? -4 : style.vy < 0 ? this.viewH + 4 : Math.random() * this.viewH,
+        vx: (Math.random() - 0.5) * 6,
+        vy: style.vy * (0.6 + Math.random() * 0.8),
+        wob: 1 + Math.random() * 2,
+        t: 0,
+        life: 6 + Math.random() * 6,
+        size: style.size[0] + Math.random() * (style.size[1] - style.size[0]),
+        color: style.colors[Math.floor(Math.random() * style.colors.length)],
+      });
+    }
+  }
+
+  drawAmbient() {
+    const ctx = this.ctx;
+    for (const a of this.ambient) {
+      const fade = Math.min(1, a.t / 0.8, (a.life - a.t) / 0.8);
+      ctx.globalAlpha = Math.max(0, fade) * 0.7;
+      ctx.fillStyle = a.color;
+      ctx.fillRect(Math.round(a.x), Math.round(a.y), a.size, a.size);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // A soft dark edge around the view, cached since the view size never changes.
+  drawVignette() {
+    if (!this.vignette) {
+      const c = document.createElement('canvas');
+      c.width = this.viewW;
+      c.height = this.viewH;
+      const g = c.getContext('2d');
+      const grad = g.createRadialGradient(this.viewW / 2, this.viewH / 2, this.viewH * 0.35, this.viewW / 2, this.viewH / 2, this.viewH * 0.75);
+      grad.addColorStop(0, 'rgba(0,0,0,0)');
+      grad.addColorStop(1, 'rgba(5,3,10,0.45)');
+      g.fillStyle = grad;
+      g.fillRect(0, 0, this.viewW, this.viewH);
+      this.vignette = c;
+    }
+    this.ctx.drawImage(this.vignette, 0, 0);
   }
 
   draw(sim, run, view = {}) {
@@ -204,7 +278,7 @@ export class Renderer {
     const cx = Math.round(this.cam.x);
     const cy = Math.round(this.cam.y);
     ctx.translate(-cx, -cy);
-    if (this.shake > 0) {
+    if (this.shake > 0 && this.settings?.shake !== false) {
       const m = this.shake * 8;
       ctx.translate((Math.random() - 0.5) * m, (Math.random() - 0.5) * m);
     }
@@ -232,6 +306,8 @@ export class Renderer {
     this.drawFx();
     ctx.restore();
 
+    this.drawAmbient();
+    this.drawVignette();
     if (sim.freeze > 0 && sim.status === 'playing') {
       ctx.fillStyle = 'rgba(120,180,255,0.08)';
       ctx.fillRect(0, 0, this.viewW, this.viewH);
@@ -1109,7 +1185,9 @@ export class Renderer {
     const flip = p.face === 'left' ? -1 : 1;
     const step = p.walking ? Math.sin(t * 18) : 0;
     ctx.save();
-    ctx.translate(cx, cy);
+    // A little hop in the step, and a squash while pumping.
+    ctx.translate(cx, cy - (p.walking ? Math.abs(step) * 1.5 : 0));
+    if (sim.hose) ctx.scale(1 + Math.sin(t * 30) * 0.04, 1 - Math.sin(t * 30) * 0.04);
     if (p.dir === 'up' && p.moving) ctx.rotate(-Math.PI / 2 * flip);
     if (p.dir === 'down' && p.moving) ctx.rotate(Math.PI / 2 * flip);
     drawMiner(ctx, flip, step, !!sim.hose);
@@ -1135,7 +1213,17 @@ export class Renderer {
     for (const p of this.particles) {
       ctx.globalAlpha = 1 - p.t / p.life;
       ctx.fillStyle = p.color;
-      ctx.fillRect(p.x * TILE + TILE / 2 - 2, p.y * TILE + TILE / 2 - 2, 4, 4);
+      const sz = p.size || 4;
+      ctx.fillRect(p.x * TILE + TILE / 2 - sz / 2, p.y * TILE + TILE / 2 - sz / 2, sz, sz);
+    }
+    for (const r of this.rings) {
+      const k = r.t / r.life;
+      ctx.globalAlpha = 1 - k;
+      ctx.strokeStyle = r.color;
+      ctx.lineWidth = 3 * (1 - k) + 1;
+      ctx.beginPath();
+      ctx.arc(r.x * TILE + TILE / 2, r.y * TILE + TILE / 2, (0.3 + k * r.radius) * TILE, 0, Math.PI * 2);
+      ctx.stroke();
     }
     ctx.globalAlpha = 1;
     ctx.font = 'bold 11px "Press Start 2P", ui-monospace, monospace';

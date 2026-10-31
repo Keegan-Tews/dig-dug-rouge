@@ -76,7 +76,7 @@ body {
 }
 .panel h2 { font-size: 15px; margin: 4px 0 12px; color: var(--accent); }
 .panel h2.lose { color: var(--bad); }
-.panel h2.win { color: var(--good); }
+.panel h2.win, .panel p.win { color: var(--good); }
 .panel h3 { font-size: 11px; margin: 16px 0 8px; color: var(--text); text-align: left; }
 .tag { font-size: 11px; }
 .tip-icon { font-size: 44px; line-height: 1.2; margin: 6px 0; font-family: sans-serif; }
@@ -167,4 +167,21 @@ button.ghost { background: transparent; color: var(--dim); border: 1px solid var
   .side { display: flex; align-items: center; gap: 10px; }
   .itembtns { display: flex; flex-direction: column; gap: 8px; }
   .itembtns button { touch-action: none; user-select: none; padding: 10px 8px; }
+}
+
+/* Menus pop in, and the logo bobs gently. */
+.panel { animation: panel-in 0.18s ease-out; }
+@keyframes panel-in {
+  from { transform: scale(0.94); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+.panel.still { animation: none; }
+.panel h1 { animation: logo-bob 2.4s ease-in-out infinite; }
+@keyframes logo-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+.setting .card-head span { min-width: 3em; text-align: right; }
+@media (prefers-reduced-motion: reduce) {
+  .panel, .panel h1 { animation: none; }
 }

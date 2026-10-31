@@ -7,6 +7,8 @@ import { FloorSim } from './game.js';
 import { Renderer } from './render.js';
 import { Input } from './input.js';
 import { Sfx } from './audio.js';
+import { Music } from './music.js';
+import { loadSettings, saveSettings } from './settings.js';
 import { UPGRADE_BY_ID } from './upgrades.js';
 import { ITEM_BY_ID } from './items.js';
 import { GEAR_BY_ID, GEAR_SLOTS } from './gear.js';
@@ -22,14 +24,18 @@ import {
 
 const STEP = 1 / 120;
 // Scenes drawn over the idle backdrop floor, which has no HUD.
-const MENU_SCENES = ['title', 'help', 'vault', 'classes'];
+const MENU_SCENES = ['title', 'help', 'vault', 'classes', 'settings'];
 
 const canvas = document.getElementById('screen');
 const overlay = document.getElementById('overlay');
 const renderer = new Renderer(canvas);
 const input = new Input(window);
 const storage = (() => { try { return window.localStorage; } catch { return null; } })();
-const sfx = new Sfx(storage);
+const settings = loadSettings(storage);
+const sfx = new Sfx(settings);
+const music = new Music(sfx, settings);
+sfx.onReady = () => music.start();
+renderer.settings = settings;
 
 const state = {
   meta: loadMeta(storage),
@@ -44,14 +50,19 @@ const state = {
   rerolls: 0,
   tips: [],
   tip: null,
+  runTime: 0,
 };
 
 // Exposed for automated smoke tests and debugging from the console.
 window.__game = state;
+window.__music = music;
 
 function el(html) {
+  // Only animate a panel in when a menu opens, not when it redraws in place.
+  const wasOpen = !overlay.hidden;
   overlay.innerHTML = html;
   overlay.hidden = false;
+  if (wasOpen) overlay.querySelector('.panel')?.classList.add('still');
   const first = overlay.querySelector('button:not([disabled])');
   if (first) first.focus({ preventScroll: true });
 }
@@ -75,9 +86,37 @@ function showTitle() {
         <button data-action="start">Start run</button>
         <button data-action="vault">Fossil Vault (${m.fossils} 🦴)</button>
         <button data-action="help">How to play</button>
+        <button data-action="settings">Settings</button>
       </div>
       <p class="small dim">Best floor: ${m.bestFloor || '-'} &middot; Runs: ${m.runs} &middot; Wins: ${m.wins}</p>
     </div>`);
+}
+
+function onOff(v) {
+  return v ? 'On' : 'Off';
+}
+
+function showSettings(from = state.scene === 'settings' ? state.settingsFrom : state.scene) {
+  state.settingsFrom = from;
+  if (from !== 'play') state.scene = 'settings';
+  const row = (key, label, desc) => `
+    <button class="card pick setting" data-action="setting" data-key="${key}">
+      <div class="card-head"><b>${label}</b><span>${onOff(settings[key])}</span></div>
+      <p>${desc}</p>
+    </button>`;
+  el(`
+    <div class="panel">
+      <h2>Settings</h2>
+      <div class="cards">
+        ${row('music', 'Music', 'A looping tune for each area, the shop and bosses.')}
+        ${row('sound', 'Sound effects', 'Digging, pumping, pops and booms.')}
+        ${row('shake', 'Screen shake', 'Turn off if the shaking bothers you. Flashes and hit pauses stay.')}
+      </div>
+      <p class="small dim">M mutes music and sound together.</p>
+      <div class="buttons"><button data-action="settingsback">Back</button></div>
+    </div>`);
+  const key = state.settingsKey;
+  if (key) overlay.querySelector(`[data-key="${key}"]`)?.focus({ preventScroll: true });
 }
 
 function showHelp() {
@@ -166,6 +205,7 @@ function startRun(classId) {
   saveMeta(storage, state.meta);
   state.run = newRun(randomSeed(), state.meta, classId);
   state.tips = [];
+  state.runTime = 0;
   startFloor();
 }
 
@@ -181,6 +221,8 @@ function startFloor() {
   renderer.updateCamera(state.sim, 0, true);
   renderer.popups = [];
   renderer.particles = [];
+  renderer.rings = [];
+  renderer.ambient = [];
   const act = actFor(run.floor);
   const boss = isBossFloor(run.floor);
   state.banner = {
@@ -304,6 +346,7 @@ function showEnd(won) {
   const run = state.run;
   if (won) winRun(run);
   else failRun(run, state.sim);
+  const newBest = run.floor > state.meta.bestFloor && state.meta.runs > 0;
   recordRunEnd(state.meta, run, won);
   saveMeta(storage, state.meta);
   state.scene = won ? 'victory' : 'gameover';
@@ -315,7 +358,9 @@ function showEnd(won) {
       <h2 class="${won ? 'win' : 'lose'}">${won ? 'You reached the core!' : 'Run over'}</h2>
       <p class="small dim">${CLASS_BY_ID[run.classId].icon} ${CLASS_BY_ID[run.classId].name}</p>
       <p>${won ? `All ${TOTAL_FLOORS} floors cleared.` : `Fell on floor ${run.floor} of ${TOTAL_FLOORS}.`}</p>
+      ${newBest ? '<p class="win">New best floor!</p>' : ''}
       <ul class="help">
+        <li>Time: <b>${formatTime(state.runTime)}</b></li>
         <li>Foes popped or crushed: <b>${run.kills}</b></li>
         <li>Gold earned: <b>${run.goldEarned}g</b>${won ? '' : ' (lost)'}</li>
         <li>Fossils banked: <b>${run.fossils} 🦴</b> (vault total ${state.meta.fossils})</li>
@@ -334,10 +379,11 @@ function showPause() {
   el(`
     <div class="panel">
       <h2>Paused</h2>
+      <p class="small">Floor ${state.run.floor} &middot; ${formatTime(state.runTime)}</p>
       <p class="small dim">Move: arrows/WASD &middot; Pump: Space &middot; Item: E &middot; Switch: Q</p>
       <div class="buttons">
         <button data-action="resume">Resume</button>
-        <button data-action="mute" class="ghost">Sound: ${sfx.muted ? 'off' : 'on'}</button>
+        <button data-action="settings" class="ghost">Settings</button>
         <button data-action="abandon" class="ghost">Abandon run</button>
       </div>
     </div>`);
@@ -377,10 +423,36 @@ function resume() {
   hideOverlay();
 }
 
+function formatTime(sec) {
+  const s = Math.floor(sec);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+
+function changeSetting(key, value) {
+  settings[key] = value;
+  saveSettings(storage, settings);
+  music.applyVolume();
+  if (key === 'music' && value) music.start();
+}
+
 function toggleMute() {
-  const muted = sfx.toggleMute();
-  renderer.showToast(muted ? 'Sound off (M)' : 'Sound on (M)');
-  if (!muted) sfx.play('select');
+  const on = !(settings.sound || settings.music);
+  changeSetting('sound', on);
+  changeSetting('music', on);
+  renderer.showToast(on ? 'Sound on (M)' : 'Sound off (M)');
+  if (on) sfx.play('select');
+}
+
+// Which tune fits what's on screen right now.
+function musicFor() {
+  const sc = state.scene;
+  if (['title', 'help', 'vault', 'classes', 'victory'].includes(sc)) return 'title';
+  if (sc === 'settings') return music.trackId;
+  if (sc === 'shop') return 'shop';
+  if (sc === 'gameover') return null;
+  if (!state.run || !state.run.classId) return 'title';
+  if (sc === 'play' && isBossFloor(state.run.floor)) return 'boss';
+  return runZone(state.run).id;
 }
 
 // ---- actions ----
@@ -392,9 +464,18 @@ const actions = {
   help: showHelp,
   vault: showVault,
   resume,
-  mute: () => {
-    toggleMute();
-    showPause();
+  settings: () => showSettings(),
+  setting: (b) => {
+    const key = b.dataset.key;
+    state.settingsKey = key;
+    changeSetting(key, !settings[key]);
+    sfx.play('select');
+    showSettings();
+  },
+  settingsback: () => {
+    state.settingsKey = null;
+    if (state.settingsFrom === 'play') showPause();
+    else showTitle();
   },
   tipdone: () => {
     if (state.tip && !state.meta.seen.includes(state.tip)) {
@@ -457,10 +538,33 @@ overlay.addEventListener('click', (e) => {
   actions[b.dataset.action]?.(b);
 });
 
+// Menus: arrow keys move between buttons, Space or Enter presses one.
+window.addEventListener('keydown', (e) => {
+  if (overlay.hidden) return;
+  const buttons = [...overlay.querySelectorAll('button:not([disabled])')];
+  if (!buttons.length) return;
+  const i = buttons.indexOf(document.activeElement);
+  let move = 0;
+  if (['ArrowDown', 'ArrowRight', 'KeyS', 'KeyD'].includes(e.code)) move = 1;
+  else if (['ArrowUp', 'ArrowLeft', 'KeyW', 'KeyA'].includes(e.code)) move = -1;
+  if (move) {
+    const next = buttons[(i + move + buttons.length) % buttons.length];
+    next.focus({ preventScroll: false });
+    next.scrollIntoView({ block: 'nearest' });
+    sfx.play('cycle');
+  } else if (e.code === 'Space' && i >= 0) {
+    if (!e.repeat) buttons[i].click();
+  } else {
+    return;
+  }
+  e.preventDefault();
+  e.stopPropagation();
+}, true);
+
 input.onPress((code) => {
   if (code === 'KeyM') {
     toggleMute();
-    if (state.paused && !state.tip && state.scene === 'play') showPause();
+    if (state.scene === 'settings' || (state.paused && overlay.querySelector('.setting'))) showSettings();
     return;
   }
   if (state.tip && code === 'Escape') {
@@ -498,7 +602,9 @@ let acc = 0;
 function frame(now) {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
+  music.play(musicFor());
   if (state.scene === 'play' && state.sim && !state.paused) {
+    state.runTime += dt;
     if (state.banner) {
       state.banner.t -= dt;
       if (state.banner.t <= 0) state.banner = null;

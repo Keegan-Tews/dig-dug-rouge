@@ -46,21 +46,19 @@ const NOISE = {
   shatter: { d: 0.2, v: 0.1, cut: 5000 },
 };
 
-const SETTINGS_KEY = 'tunnelpop_audio';
-
 export class Sfx {
-  constructor(storage = null) {
+  // `settings` is the shared settings object; `sound: false` silences effects.
+  constructor(settings = { sound: true }) {
     this.ctx = null;
     this.master = null;
     this.noise = null;
-    this.storage = storage;
-    this.muted = false;
+    this.settings = settings;
     this.lastDig = 0;
-    try {
-      this.muted = JSON.parse(storage?.getItem(SETTINGS_KEY) || '{}').muted === true;
-    } catch {
-      this.muted = false;
-    }
+    this.onReady = null;
+  }
+
+  get muted() {
+    return !this.settings.sound;
   }
 
   unlock() {
@@ -78,16 +76,7 @@ export class Sfx {
     this.noise = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
     const data = this.noise.getChannelData(0);
     for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
-  }
-
-  toggleMute() {
-    this.muted = !this.muted;
-    try {
-      this.storage?.setItem(SETTINGS_KEY, JSON.stringify({ muted: this.muted }));
-    } catch {
-      // Storage can be unavailable (private mode); the toggle still works for this session.
-    }
-    return this.muted;
+    this.onReady?.();
   }
 
   // `pitch` scales the sound's frequencies, e.g. to climb with each pump.
