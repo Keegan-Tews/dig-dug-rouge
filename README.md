@@ -23,7 +23,8 @@ Or open the folder with any other static server (`python3 -m http.server`, GitHu
 | Use item | E, K or C |
 | Switch item | Q |
 | Pause | P or Esc |
-| Mute | M |
+| Mute music and sound | M |
+| Menus | Arrow keys to move, Space or Enter to pick |
 | Pick a card | 1 to 4 |
 
 Touch devices get an on-screen d-pad plus pump, item and switch buttons.
@@ -85,6 +86,7 @@ The first time you ever get each item or piece of gear, the game pauses with a s
 | `src/render.js` | Canvas renderer; all art is drawn in code. |
 | `src/main.js` | Scenes, menus and the fixed-step game loop. |
 | `src/input.js`, `src/audio.js` | Keyboard/touch input and synthesized sound effects. |
+| `src/music.js`, `src/settings.js` | Looping chiptune tracks per area, and saved settings (music, sound, screen shake). |
 
 ## Tests
 
